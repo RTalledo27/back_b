@@ -1,0 +1,41 @@
+name: backend_rifas_app
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rifas_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME:-rifas}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+      POSTGRES_DB: ${DB_DATABASE:-backend_rifas_app}
+      POSTGRES_TEST_DB: ${DB_TEST_DATABASE:-backend_rifas_app_test}
+    ports:
+      - "${DB_PORT:-55432}:5432"
+    volumes:
+      - rifas_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sh:/docker-entrypoint-initdb.d/10-init-test-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-rifas} -d ${DB_DATABASE:-backend_rifas_app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: rifas_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-56379}:6379"
+    volumes:
+      - rifas_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  rifas_postgres_data:
+  rifas_redis_data:
