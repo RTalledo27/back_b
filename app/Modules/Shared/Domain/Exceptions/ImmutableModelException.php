@@ -10,4 +10,16 @@ final class ImmutableModelException extends DomainException
     {
         return new self("{$modelClass} is append-only and cannot be {$operation}.");
     }
+
+    /**
+     * @param  list<string>  $attributes
+     */
+    public static function forAttributes(string $modelClass, array $attributes): self
+    {
+        $list = implode(', ', $attributes);
+
+        return new self(
+            "{$modelClass} has immutable attributes that cannot be modified after creation: {$list}."
+        );
+    }
 }

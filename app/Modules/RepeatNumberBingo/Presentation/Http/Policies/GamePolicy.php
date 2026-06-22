@@ -42,4 +42,44 @@ final class GamePolicy
     {
         return $user->isAdmin();
     }
+
+    /**
+     * Player intent to reserve numbers in this game. Only checks identity —
+     * sales-open, availability, ownership and expiration are domain rules
+     * enforced by ReserveGameNumbersAction after acquiring locks.
+     */
+    public function reserve(User $user, Game $game): bool
+    {
+        return true;
+    }
+
+    public function start(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function draw(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function rebuildCounters(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function viewDraws(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function viewCounters(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function viewWinner(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
 }

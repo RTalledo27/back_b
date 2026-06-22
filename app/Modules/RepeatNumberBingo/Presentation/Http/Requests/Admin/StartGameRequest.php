@@ -1,0 +1,27 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Modules\RepeatNumberBingo\Presentation\Http\Requests\Admin;
+
+use App\Modules\RepeatNumberBingo\Domain\Models\Game;
+use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Gate;
+
+final class StartGameRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        $game = $this->route('game');
+
+        return $game instanceof Game && Gate::allows('start', $game);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function rules(): array
+    {
+        return [];
+    }
+}

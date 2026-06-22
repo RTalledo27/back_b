@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\RepeatNumberBingo\Domain\Models;
 
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameNumberStatus;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameNumberTransition;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,6 +33,20 @@ class GameNumber extends Model
             'number' => 'integer',
             'status' => GameNumberStatus::class,
         ];
+    }
+
+    /**
+     * Single source of truth for valid status changes lives in
+     * GameNumberStatus::canTransitionTo. Actions must use this method
+     * instead of assigning $status directly.
+     */
+    public function transitionTo(GameNumberStatus $next): void
+    {
+        if (! $this->status->canTransitionTo($next)) {
+            throw InvalidGameNumberTransition::from($this->status, $next);
+        }
+
+        $this->status = $next;
     }
 
     /**

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 /**
  * @property string $id
@@ -23,11 +24,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $ticket_price_cents
  * @property int $prize_cents
  * @property string $currency
- * @property ?\Illuminate\Support\Carbon $sales_opens_at
- * @property ?\Illuminate\Support\Carbon $sales_closes_at
- * @property ?\Illuminate\Support\Carbon $scheduled_start_at
+ * @property ?Carbon $sales_opens_at
+ * @property ?Carbon $sales_closes_at
+ * @property ?Carbon $scheduled_start_at
  * @property int $draw_interval_seconds
  * @property bool $auto_draw_enabled
+ * @property ?Carbon $started_at
+ * @property ?Carbon $completed_at
  * @property GameStatus $status
  * @property ?array<string,mixed> $settings
  * @property ?int $created_by
@@ -56,6 +59,8 @@ class Game extends Model
             'sales_opens_at' => 'datetime',
             'sales_closes_at' => 'datetime',
             'scheduled_start_at' => 'datetime',
+            'started_at' => 'datetime',
+            'completed_at' => 'datetime',
             'settings' => 'array',
             'status' => GameStatus::class,
         ];

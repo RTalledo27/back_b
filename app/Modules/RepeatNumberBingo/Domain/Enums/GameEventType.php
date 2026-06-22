@@ -34,4 +34,5 @@ enum GameEventType: string
     case GameResumed = 'game_resumed';
     case GameCompleted = 'game_completed';
     case GameCancelled = 'game_cancelled';
+    case CountersRebuilt = 'counters_rebuilt';
 }
