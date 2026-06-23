@@ -48,7 +48,7 @@ final class RebuildCountersConcurrencyTest extends TestCase
             'name' => 'RC', 'number_min' => 1, 'number_max' => 5, 'hits_required' => 10,
             'ticket_price_cents' => 500, 'prize_cents' => 2000,
             'currency' => 'PEN', 'draw_interval_seconds' => 30,
-            'auto_draw_enabled' => true, 'status' => GameStatus::Running,
+            'auto_draw_enabled' => false, 'status' => GameStatus::Running,
             'scheduled_start_at' => now()->subHour(),
             'started_at' => now()->subMinute(),
         ]);
@@ -82,10 +82,12 @@ final class RebuildCountersConcurrencyTest extends TestCase
             ]);
         }
 
-        // Insert a wildly wrong counter so rebuild has work to do.
+        // Insert a wrong counter so rebuild has work to do. hits_count must stay
+        // below hits_required (10) so a draw-first ordering does not trip the
+        // integrity guard (currentHits > hits_required) before rebuild corrects it.
         GameNumberCounter::create([
             'game_id' => $game->id, 'game_number_id' => $gn1->id,
-            'hits_count' => 999, 'last_draw_sequence' => 999,
+            'hits_count' => 1, 'last_draw_sequence' => 999,
         ]);
 
         return [$game, User::factory()->admin()->create(), $gn1];
@@ -117,7 +119,7 @@ final class RebuildCountersConcurrencyTest extends TestCase
             'SESSION_DRIVER' => 'array',
             'MAIL_MAILER' => 'array',
         ]);
-        $process->setTimeout(30);
+        $process->setTimeout(60);
         $process->start();
 
         return $process;

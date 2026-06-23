@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Modules\RepeatNumberBingo\Application\Actions;
 
 use App\Modules\RepeatNumberBingo\Application\Contracts\GameStartReadinessChecker;
+use App\Modules\RepeatNumberBingo\Application\DTOs\PublicGameUpdateReason;
 use App\Modules\RepeatNumberBingo\Application\DTOs\StartGameData;
 use App\Modules\RepeatNumberBingo\Application\DTOs\StartGameOutcome;
 use App\Modules\RepeatNumberBingo\Application\DTOs\StartGameResult;
+use App\Modules\RepeatNumberBingo\Application\Services\CommittedPublicGameUpdatesDispatcher;
 use App\Modules\RepeatNumberBingo\Domain\Enums\EntryStatus;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
@@ -16,6 +18,7 @@ use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameAlreadyCompleted;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameHasNoScheduledStart;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameLifecycleIntegrityViolation;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameStartTooEarly;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameEngineConfiguration;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameTransition;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEntry;
@@ -57,6 +60,7 @@ final class StartGameAction
 {
     public function __construct(
         private readonly GameStartReadinessChecker $readiness,
+        private readonly CommittedPublicGameUpdatesDispatcher $publicUpdates,
     ) {}
 
     public function execute(StartGameData $data): StartGameResult
@@ -77,6 +81,12 @@ final class StartGameAction
             } catch (Throwable $e) {
                 report($e);
             }
+
+            $this->publicUpdates->dispatch(
+                $result->gameId,
+                PublicGameUpdateReason::Started,
+                $result->startedAt,
+            );
         }
 
         return $result;
@@ -168,11 +178,18 @@ final class StartGameAction
         // 5. Sales-side readiness — run after Game is locked.
         $readiness = $this->readiness->assertReadyForStart($game->id);
 
-        // 6. Apply transition. Single canonical timestamp used everywhere.
+        // 6. Apply transition and initialize engine schedule.
         $startedAt = $now;
+
+        if ($game->auto_draw_enabled) {
+            $this->assertValidEngineConfiguration($game);
+        }
 
         $game->transitionTo(GameStatus::Running);
         $game->started_at = $startedAt;
+        if ($game->auto_draw_enabled) {
+            $game->next_draw_at = $startedAt->addSeconds($game->draw_interval_seconds);
+        }
         $game->save();
 
         // 7. Audit (critical, inside transaction). One row exactly.
@@ -196,6 +213,21 @@ final class StartGameAction
             confirmedEntriesCount: $readiness->confirmedEntriesCount,
             outcome: StartGameOutcome::Started,
         );
+    }
+
+    private function assertValidEngineConfiguration(Game $game): void
+    {
+        $min = (int) config('engine.draw_interval_min_seconds', 10);
+        $max = (int) config('engine.draw_interval_max_seconds', 3600);
+
+        if ($game->draw_interval_seconds < $min || $game->draw_interval_seconds > $max) {
+            throw InvalidGameEngineConfiguration::invalidInterval(
+                $game->id,
+                $game->draw_interval_seconds,
+                $min,
+                $max,
+            );
+        }
     }
 
     /**

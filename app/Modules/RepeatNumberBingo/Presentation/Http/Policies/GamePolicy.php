@@ -58,6 +58,16 @@ final class GamePolicy
         return $user->isAdmin();
     }
 
+    public function pause(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function resume(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
     public function draw(User $user, Game $game): bool
     {
         return $user->isAdmin();

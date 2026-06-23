@@ -48,7 +48,7 @@ final class DrawGameNumberActionTest extends TestCase
             'name' => 'DR', 'number_min' => 1, 'number_max' => $numberMax, 'hits_required' => $hitsRequired,
             'ticket_price_cents' => 500, 'prize_cents' => 2000,
             'currency' => 'PEN', 'draw_interval_seconds' => 30,
-            'auto_draw_enabled' => true, 'status' => GameStatus::Running,
+            'auto_draw_enabled' => false, 'status' => GameStatus::Running,
             'scheduled_start_at' => now()->subHour(),
             'started_at' => now()->subMinute(),
         ]);
@@ -244,7 +244,7 @@ final class DrawGameNumberActionTest extends TestCase
             'slug' => 'dr-nr-'.fake()->unique()->lexify('?????'),
             'name' => 'NR', 'number_min' => 1, 'number_max' => 5, 'hits_required' => 5,
             'ticket_price_cents' => 500, 'prize_cents' => 2000, 'currency' => 'PEN',
-            'draw_interval_seconds' => 30, 'auto_draw_enabled' => true,
+            'draw_interval_seconds' => 30, 'auto_draw_enabled' => false,
             'status' => GameStatus::SalesClosed,
         ]);
         for ($i = 1; $i <= 5; $i++) {

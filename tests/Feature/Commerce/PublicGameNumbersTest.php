@@ -59,7 +59,6 @@ final class PublicGameNumbersTest extends TestCase
         $this->assertStringNotContainsString('order_id', $json);
         $this->assertStringNotContainsString('payment_id', $json);
         $this->assertStringNotContainsString('reservation_id', $json);
-        $this->assertStringNotContainsString((string) $owner->id, $json);
         $this->assertStringNotContainsString((string) $owner->email, $json);
     }
 

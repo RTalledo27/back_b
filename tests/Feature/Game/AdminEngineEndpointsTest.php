@@ -34,7 +34,7 @@ final class AdminEngineEndpointsTest extends TestCase
             'name' => 'AEE', 'number_min' => 1, 'number_max' => 5, 'hits_required' => 5,
             'ticket_price_cents' => 500, 'prize_cents' => 2000,
             'currency' => 'PEN', 'draw_interval_seconds' => 30,
-            'auto_draw_enabled' => true, 'status' => GameStatus::SalesClosed,
+            'auto_draw_enabled' => false, 'status' => GameStatus::SalesClosed,
             'scheduled_start_at' => now()->subMinute(),
         ]);
         for ($i = 1; $i <= 5; $i++) {
@@ -96,13 +96,13 @@ final class AdminEngineEndpointsTest extends TestCase
 
     public function test_start_with_readiness_failure_returns_422(): void
     {
-        // No confirmed entries → readiness rejects.
+        // No confirmed entries â†’ readiness rejects.
         $game = Game::create([
             'slug' => 'no-'.fake()->unique()->lexify('?????'),
             'name' => 'NO', 'number_min' => 1, 'number_max' => 5, 'hits_required' => 5,
             'ticket_price_cents' => 500, 'prize_cents' => 2000,
             'currency' => 'PEN', 'draw_interval_seconds' => 30,
-            'auto_draw_enabled' => true, 'status' => GameStatus::SalesClosed,
+            'auto_draw_enabled' => false, 'status' => GameStatus::SalesClosed,
             'scheduled_start_at' => now()->subMinute(),
         ]);
         Sanctum::actingAs($this->admin());

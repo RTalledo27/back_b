@@ -7,15 +7,14 @@ namespace App\Modules\RepeatNumberBingo\Application\Actions;
 use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
 use App\Modules\RepeatNumberBingo\Application\DTOs\DrawGameNumberData;
 use App\Modules\RepeatNumberBingo\Application\DTOs\DrawGameNumberResult;
+use App\Modules\RepeatNumberBingo\Application\Services\CommittedDrawEventsDispatcher;
 use App\Modules\RepeatNumberBingo\Domain\Enums\EntryStatus;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameNumberStatus;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
-use App\Modules\RepeatNumberBingo\Domain\Events\GameCompleted;
-use App\Modules\RepeatNumberBingo\Domain\Events\GameNumberDrawn;
-use App\Modules\RepeatNumberBingo\Domain\Events\GameWinnerDeclared;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\DrawnNumberOutOfRange;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameAlreadyCompleted;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameEngineAutomationActive;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameLifecycleIntegrityViolation;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameParticipationIntegrityViolation;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameTransition;
@@ -30,7 +29,6 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use LogicException;
-use Throwable;
 
 /**
  * Phase 3.6: single-draw execution INCLUDING winner resolution.
@@ -59,6 +57,7 @@ final class DrawGameNumberAction
 {
     public function __construct(
         private readonly DrawNumberStrategy $drawStrategy,
+        private readonly CommittedDrawEventsDispatcher $events,
     ) {}
 
     public function execute(DrawGameNumberData $data): DrawGameNumberResult
@@ -67,53 +66,18 @@ final class DrawGameNumberAction
             fn (): DrawGameNumberResult => $this->executeWithinTransaction($data),
         );
 
-        if ($result->wasReplay) {
-            return $result;
-        }
-
-        // Three dispatches, each isolated. A failure in one MUST NOT
-        // suppress the next. Snapshot of the canonical order:
-        //   GameNumberDrawn → GameWinnerDeclared (if winner) → GameCompleted
-        $this->dispatchSafely(static fn () => GameNumberDrawn::dispatch(
-            $result->gameId,
-            $result->drawId,
-            $data->commandId->toString(),
-            $result->sequence,
-            $result->drawnNumber,
-            $result->currentHits,
-            $result->hitsRequired,
-            $result->numberIsSold,
-            $result->drawnAt->toIso8601String(),
-        ));
-
-        if ($result->winnerCreated) {
-            $this->dispatchSafely(static fn () => GameWinnerDeclared::dispatch(
-                $result->gameId,
-                $result->winnerEntryId ?? '',
-                $result->drawId,
-                $result->drawnAt->toIso8601String(),
-            ));
-            $this->dispatchSafely(static fn () => GameCompleted::dispatch(
-                $result->gameId,
-                $result->drawId,
-                $result->drawnAt->toIso8601String(),
-            ));
+        if (! $result->wasReplay) {
+            $this->events->dispatch($result, $data->commandId->toString());
         }
 
         return $result;
     }
 
-    private function dispatchSafely(callable $fn): void
-    {
-        try {
-            $fn();
-        } catch (Throwable $e) {
-            report($e);
-        }
-    }
-
-    public function executeWithinTransaction(DrawGameNumberData $data): DrawGameNumberResult
-    {
+    public function executeWithinTransaction(
+        DrawGameNumberData $data,
+        bool $automated = false,
+        ?Game $lockedGame = null,
+    ): DrawGameNumberResult {
         if (DB::transactionLevel() === 0) {
             throw new LogicException(
                 'DrawGameNumberAction::executeWithinTransaction requires an active database transaction.'
@@ -122,13 +86,17 @@ final class DrawGameNumberAction
 
         // 1. Engine root lock.
         /** @var ?Game $game */
-        $game = Game::query()
+        $game = $lockedGame ?? Game::query()
             ->whereKey($data->gameId)
             ->lockForUpdate()
             ->first();
 
         if ($game === null) {
             throw (new ModelNotFoundException)->setModel(Game::class, [$data->gameId]);
+        }
+
+        if ($game->id !== $data->gameId) {
+            throw new LogicException('The locked Game does not match DrawGameNumberData::gameId.');
         }
 
         // 2. Replay detection — read the persisted command snapshot.
@@ -175,6 +143,12 @@ final class DrawGameNumberAction
 
         if ($game->status !== GameStatus::Running) {
             throw InvalidGameTransition::from($game->status, GameStatus::Running);
+        }
+
+        // Manual draws are prohibited while the engine scheduler is active.
+        // This guard runs under the Game FOR UPDATE lock.
+        if ($game->auto_draw_enabled && ! $automated) {
+            throw GameEngineAutomationActive::forGame($game->id);
         }
 
         // 4. There must not already be a winner for a running game.
@@ -358,7 +332,7 @@ final class DrawGameNumberAction
         int $winningHits,
         int $sequence,
         CarbonImmutable $completedAt,
-        int $actorUserId,
+        ?int $actorUserId,
     ): void {
         // Revalidate the aggregate one more time — the row was lockForUpdate'd,
         // but defensive equality here surfaces any miswired data immediately.
@@ -398,6 +372,7 @@ final class DrawGameNumberAction
         $game->save();
         $game->transitionTo(GameStatus::Completed);
         $game->completed_at = $completedAt;
+        $game->next_draw_at = null;
         $game->save();
 
         $totalDraws = (int) DB::table('game_draws')->where('game_id', $game->id)->count();

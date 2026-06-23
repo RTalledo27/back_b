@@ -16,6 +16,6 @@ final readonly class DrawGameNumberData
     public function __construct(
         public string $gameId,
         public DrawCommandId $commandId,
-        public int $actorUserId,
+        public ?int $actorUserId,
     ) {}
 }

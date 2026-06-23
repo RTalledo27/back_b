@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Modules\Commerce\Application\Jobs\ExpirePendingOrdersJob;
+use App\Modules\RepeatNumberBingo\Application\Jobs\DispatchDueGameDrawsJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -47,3 +48,20 @@ Artisan::command('inspire', function () {
 Schedule::job(ExpirePendingOrdersJob::class)
     ->everyMinute()
     ->withoutOverlapping(2);
+
+$pollSeconds = (int) config('engine.dispatch_poll_seconds');
+DispatchDueGameDrawsJob::validatePollSeconds($pollSeconds);
+
+$engineDispatcher = Schedule::job(new DispatchDueGameDrawsJob);
+
+match ($pollSeconds) {
+    1 => $engineDispatcher->everySecond(),
+    2 => $engineDispatcher->everyTwoSeconds(),
+    5 => $engineDispatcher->everyFiveSeconds(),
+    10 => $engineDispatcher->everyTenSeconds(),
+    15 => $engineDispatcher->everyFifteenSeconds(),
+    20 => $engineDispatcher->everyTwentySeconds(),
+    30 => $engineDispatcher->everyThirtySeconds(),
+};
+
+$engineDispatcher->withoutOverlapping(1);

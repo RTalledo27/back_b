@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Modules\RepeatNumberBingo\Application\Actions;
 
 use App\Modules\RepeatNumberBingo\Application\DTOs\CreateGameData;
+use App\Modules\RepeatNumberBingo\Application\Services\GameNumberGenerator;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
 use App\Modules\RepeatNumberBingo\Domain\Events\GameCreated;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
-use App\Modules\RepeatNumberBingo\Domain\Services\GameNumberGenerator;
 use Illuminate\Support\Facades\DB;
 
 final class CreateGameAction

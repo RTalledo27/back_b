@@ -28,11 +28,15 @@ use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\DrawGameNu
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListGameCountersController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListGameDrawsController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\OpenGameSalesController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\PauseGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\PublishGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\RebuildCountersController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ResumeGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ScheduleGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ShowGameWinnerController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\StartGameController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGameDrawsController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGameNumberCountersController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGamesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ShowPublicGameController;
 use Illuminate\Http\Request;
@@ -53,6 +57,12 @@ Route::prefix('public')->group(function (): void {
         ->where('slug', '[a-z0-9-]+');
     Route::get('/games/{slug}/numbers', ListGameNumbersPublicController::class)
         ->where('slug', '[a-z0-9-]+');
+    Route::get('/games/{slug}/draws', ListPublicGameDrawsController::class)
+        ->where('slug', '[a-z0-9-]+')
+        ->name('public.games.draws.index');
+    Route::get('/games/{slug}/number-counters', ListPublicGameNumberCountersController::class)
+        ->where('slug', '[a-z0-9-]+')
+        ->name('public.games.number-counters.index');
 });
 
 Route::middleware(['auth:sanctum', 'admin'])
@@ -68,6 +78,10 @@ Route::middleware(['auth:sanctum', 'admin'])
         // Phase 3.8 — engine endpoints
         Route::post('/games/{game}/start', StartGameController::class)
             ->name('admin.games.start');
+        Route::post('/games/{game}/pause', PauseGameController::class)
+            ->name('admin.games.pause');
+        Route::post('/games/{game}/resume', ResumeGameController::class)
+            ->name('admin.games.resume');
         Route::post('/games/{game}/draws', DrawGameNumberController::class)
             ->name('admin.games.draws.store');
         Route::post('/games/{game}/counters/rebuild', RebuildCountersController::class)

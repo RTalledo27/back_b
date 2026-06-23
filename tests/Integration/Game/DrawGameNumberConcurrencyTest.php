@@ -21,7 +21,7 @@ use Tests\TestCase;
 /**
  * Real two-process concurrency for DrawGameNumberAction. Each subprocess
  * opens its own PostgreSQL connection and competes for the Game FOR
- * UPDATE lock. The subprocesses use the production crypto strategy — we
+ * UPDATE lock. The subprocesses use the production crypto strategy â€” we
  * verify structural invariants (sequence monotonicity, no duplicates,
  * single command per id) rather than the specific drawn number.
  */
@@ -45,7 +45,7 @@ final class DrawGameNumberConcurrencyTest extends TestCase
             'name' => 'DC', 'number_min' => 1, 'number_max' => $numberMax, 'hits_required' => $hitsRequired,
             'ticket_price_cents' => 500, 'prize_cents' => 2000,
             'currency' => 'PEN', 'draw_interval_seconds' => 30,
-            'auto_draw_enabled' => true, 'status' => GameStatus::Running,
+            'auto_draw_enabled' => false, 'status' => GameStatus::Running,
             'scheduled_start_at' => now()->subHour(),
             'started_at' => now()->subMinute(),
         ]);

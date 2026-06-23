@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Game;
 
+use App\Modules\RepeatNumberBingo\Application\Services\GameNumberGenerator;
+use App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameNumber;
-use App\Modules\RepeatNumberBingo\Domain\Services\GameNumberGenerator;
 use App\Modules\RepeatNumberBingo\Domain\ValueObjects\BingoNumberRange;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\TestCase;
@@ -100,7 +101,7 @@ final class Uuid7GenerationTest extends TestCase
 
         $event = GameEvent::create([
             'game_id' => $game->id,
-            'type' => \App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType::GameCreated,
+            'type' => GameEventType::GameCreated,
             'occurred_at' => now(),
         ]);
 

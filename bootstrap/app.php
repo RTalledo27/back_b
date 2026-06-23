@@ -14,6 +14,8 @@ use App\Modules\Commerce\Domain\Exceptions\InvalidPaymentTransition;
 use App\Modules\Commerce\Domain\Exceptions\NumberNotAvailableForReservation;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\DrawnNumberOutOfRange;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameAlreadyCompleted;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameEngineAutomationActive;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameEngineAutomationInactive;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameHasNoScheduledStart;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameLifecycleIntegrityViolation;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameNotReadyForStart;
@@ -21,6 +23,7 @@ use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameParticipationIntegrityVi
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameStartTooEarly;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidDrawCommandId;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameConfiguration;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameEngineConfiguration;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameTransition;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\RebuildIntegrityViolation;
 use Illuminate\Foundation\Application;
@@ -228,6 +231,33 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => 'Counters rebuild integrity check failed.',
                     'error' => 'rebuild_integrity_violation',
                 ], 409);
+            }
+        });
+
+        $exceptions->render(function (GameEngineAutomationActive $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'game_engine_automation_active',
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (GameEngineAutomationInactive $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'game_engine_automation_inactive',
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (InvalidGameEngineConfiguration $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'invalid_game_engine_configuration',
+                ], 422);
             }
         });
 

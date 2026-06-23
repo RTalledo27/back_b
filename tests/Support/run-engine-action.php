@@ -22,13 +22,20 @@ declare(strict_types=1);
 use App\Modules\Commerce\Application\Actions\ApprovePaymentAction;
 use App\Modules\Commerce\Application\DTOs\ApprovePaymentData;
 use App\Modules\RepeatNumberBingo\Application\Actions\DrawGameNumberAction;
+use App\Modules\RepeatNumberBingo\Application\Actions\ExecuteScheduledGameDrawAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\RebuildGameNumberCountersAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\StartGameAction;
 use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
 use App\Modules\RepeatNumberBingo\Application\DTOs\DrawGameNumberData;
 use App\Modules\RepeatNumberBingo\Application\DTOs\RebuildCountersData;
 use App\Modules\RepeatNumberBingo\Application\DTOs\StartGameData;
+use App\Modules\RepeatNumberBingo\Application\Jobs\ExecuteScheduledGameDrawJob;
+use App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType;
+use App\Modules\RepeatNumberBingo\Domain\Models\Game;
+use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
 use App\Modules\RepeatNumberBingo\Domain\ValueObjects\DrawCommandId;
+use App\Modules\RepeatNumberBingo\Domain\ValueObjects\EngineTick;
+use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Application;
 use Tests\Support\DeterministicDrawNumberStrategy;
@@ -104,6 +111,47 @@ try {
             'outcome' => $result->outcome->value,
             'game_id' => $result->gameId,
             'started_at' => $result->startedAt->toIso8601String(),
+        ]).PHP_EOL;
+        exit(0);
+    }
+
+    if ($action === 'scheduled-draw') {
+        $result = $app->make(ExecuteScheduledGameDrawAction::class)->execute(
+            new EngineTick(
+                gameId: (string) ($args['GAME_ID'] ?? ''),
+                scheduledAt: CarbonImmutable::parse((string) ($args['SCHEDULED_AT'] ?? '')),
+                commandId: new DrawCommandId((string) ($args['COMMAND_ID'] ?? '')),
+            ),
+        );
+        echo json_encode([
+            'ok' => true,
+            'action' => 'scheduled-draw',
+            'game_id' => $result->gameId,
+            'outcome' => $result->outcome->value,
+            'draw_id' => $result->drawResult?->drawId,
+            'was_replay' => $result->drawResult?->wasReplay,
+        ]).PHP_EOL;
+        exit(0);
+    }
+
+    if ($action === 'scheduled-job') {
+        $tick = new EngineTick(
+            gameId: (string) ($args['GAME_ID'] ?? ''),
+            scheduledAt: CarbonImmutable::parse((string) ($args['SCHEDULED_AT'] ?? '')),
+            commandId: new DrawCommandId((string) ($args['COMMAND_ID'] ?? '')),
+        );
+        $app->call([new ExecuteScheduledGameDrawJob($tick), 'handle']);
+        $game = Game::query()->findOrFail($tick->gameId);
+
+        echo json_encode([
+            'ok' => true,
+            'action' => 'scheduled-job',
+            'game_id' => $game->id,
+            'status' => $game->status->value,
+            'auto_pause_audits' => GameEvent::query()
+                ->where('game_id', $game->id)
+                ->where('type', GameEventType::GameAutoPaused)
+                ->count(),
         ]).PHP_EOL;
         exit(0);
     }

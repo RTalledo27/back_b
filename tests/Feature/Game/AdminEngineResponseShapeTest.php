@@ -39,7 +39,7 @@ final class AdminEngineResponseShapeTest extends TestCase
             'name' => 'SH', 'number_min' => 1, 'number_max' => 5, 'hits_required' => $hitsRequired,
             'ticket_price_cents' => 500, 'prize_cents' => 2000,
             'currency' => 'PEN', 'draw_interval_seconds' => 30,
-            'auto_draw_enabled' => true, 'status' => GameStatus::SalesClosed,
+            'auto_draw_enabled' => false, 'status' => GameStatus::SalesClosed,
             'scheduled_start_at' => now()->subMinute(),
         ]);
         for ($i = 1; $i <= 5; $i++) {

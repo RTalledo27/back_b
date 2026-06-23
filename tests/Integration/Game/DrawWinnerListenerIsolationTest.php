@@ -48,7 +48,7 @@ final class DrawWinnerListenerIsolationTest extends TestCase
             'name' => 'LI', 'number_min' => 1, 'number_max' => 5, 'hits_required' => 2,
             'ticket_price_cents' => 500, 'prize_cents' => 2000,
             'currency' => 'PEN', 'draw_interval_seconds' => 30,
-            'auto_draw_enabled' => true, 'status' => GameStatus::Running,
+            'auto_draw_enabled' => false, 'status' => GameStatus::Running,
             'scheduled_start_at' => now()->subHour(),
             'started_at' => now()->subMinute(),
         ]);

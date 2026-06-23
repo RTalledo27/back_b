@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Modules\RepeatNumberBingo\Domain\Services;
+namespace App\Modules\RepeatNumberBingo\Application\Services;
 
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameNumberStatus;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
