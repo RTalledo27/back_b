@@ -1,5 +1,7 @@
 <?php
 
+use App\Exceptions\Auth\InvalidActivationTokenException;
+use App\Exceptions\Auth\SocialAuthException;
 use App\Http\Middleware\EnsureIdempotencyKeyHeader;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Modules\Commerce\Domain\Exceptions\EvidenceRejected;
@@ -46,6 +48,25 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (SocialAuthException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => $e->errorCode,
+                ], $e->httpStatus);
+            }
+        });
+
+        $exceptions->render(function (InvalidActivationTokenException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'invalid_activation_token',
+                    'reason' => $e->reason,
+                ], 422);
+            }
+        });
+
         $exceptions->render(function (InvalidGameTransition $e, Request $request) {
             if ($request->expectsJson()) {
                 return response()->json([

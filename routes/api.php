@@ -2,6 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Admin\CreatePlayerController;
+use App\Http\Controllers\Auth\ActivateController;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\Auth\MeController;
+use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Auth\SocialAccountsController;
+use App\Http\Controllers\Auth\SocialCallbackController;
+use App\Http\Controllers\Auth\SocialExchangeController;
+use App\Http\Controllers\Auth\SocialLinkCallbackController;
+use App\Http\Controllers\Auth\SocialLinkRedirectController;
+use App\Http\Controllers\Auth\SocialRedirectController;
+use App\Http\Controllers\Auth\UnlinkSocialAccountController;
 use App\Modules\Commerce\Domain\Models\Order;
 use App\Modules\Commerce\Domain\Models\Payment;
 use App\Modules\Commerce\Domain\Models\PaymentDocument;
@@ -25,6 +38,7 @@ use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CancelGame
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CloseGameSalesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CreateGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\DrawGameNumberController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListAdminGamesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListGameCountersController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListGameDrawsController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\OpenGameSalesController;
@@ -33,13 +47,13 @@ use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\PublishGam
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\RebuildCountersController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ResumeGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ScheduleGameController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ShowAdminGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ShowGameWinnerController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\StartGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGameDrawsController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGameNumberCountersController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGamesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ShowPublicGameController;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::model('game', Game::class);
@@ -47,9 +61,55 @@ Route::model('order', Order::class);
 Route::model('payment', Payment::class);
 Route::model('document', PaymentDocument::class);
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
+Route::prefix('auth')->group(function (): void {
+    Route::post('/register', RegisterController::class)
+        ->middleware('throttle:auth.register');
+    Route::post('/login', LoginController::class)
+        ->middleware('throttle:auth.login');
+    Route::post('/activate', ActivateController::class)
+        ->middleware('throttle:auth.activate');
+
+    Route::prefix('social')->group(function (): void {
+        // ── Login flow (public) ───────────────────────────────────────────────
+        Route::get('/{provider}/redirect', SocialRedirectController::class)
+            ->where('provider', 'google|facebook')
+            ->middleware('throttle:auth.social.redirect');
+
+        Route::get('/{provider}/callback', SocialCallbackController::class)
+            ->where('provider', 'google|facebook')
+            ->middleware('throttle:auth.social.callback');
+
+        Route::post('/exchange', SocialExchangeController::class)
+            ->middleware('throttle:auth.social.exchange');
+
+        // ── Link callback (public — OAuth provider cannot send Bearer token) ─
+        Route::get('/{provider}/link/callback', SocialLinkCallbackController::class)
+            ->where('provider', 'google|facebook')
+            ->middleware('throttle:auth.social.link.callback');
+
+        // ── Link & unlink (require authenticated user) ─────────────────────
+        Route::middleware('auth:sanctum')->group(function (): void {
+            Route::get('/{provider}/link/redirect', SocialLinkRedirectController::class)
+                ->where('provider', 'google|facebook')
+                ->middleware('throttle:auth.social.link.redirect');
+
+            Route::delete('/{provider}', UnlinkSocialAccountController::class)
+                ->where('provider', 'google|facebook')
+                ->middleware('throttle:auth.social.unlink');
+        });
+    });
+
+    Route::middleware('auth:sanctum')->group(function (): void {
+        Route::post('/logout', LogoutController::class);
+        Route::get('/me', MeController::class);
+        Route::get('/social-accounts', SocialAccountsController::class)
+            ->name('auth.social-accounts.index');
+    });
 });
+
+Route::middleware('auth:sanctum')
+    ->get('/user', MeController::class)
+    ->name('auth.user.legacy');
 
 Route::prefix('public')->group(function (): void {
     Route::get('/games', ListPublicGamesController::class);
@@ -68,6 +128,12 @@ Route::prefix('public')->group(function (): void {
 Route::middleware(['auth:sanctum', 'admin'])
     ->prefix('admin')
     ->group(function (): void {
+        Route::post('/players', CreatePlayerController::class)
+            ->middleware('throttle:admin.create-player');
+        Route::get('/games', ListAdminGamesController::class)
+            ->name('admin.games.index');
+        Route::get('/games/{game}', ShowAdminGameController::class)
+            ->name('admin.games.show');
         Route::post('/games', CreateGameController::class);
         Route::post('/games/{game}/publish', PublishGameController::class);
         Route::post('/games/{game}/open-sales', OpenGameSalesController::class);

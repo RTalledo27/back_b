@@ -20,7 +20,7 @@ final class PublicGameNumbersTest extends TestCase
 {
     use LazilyRefreshDatabase;
 
-    public function test_public_endpoint_returns_only_number_and_state(): void
+    public function test_public_endpoint_returns_only_public_reservation_contract_fields(): void
     {
         $owner = User::factory()->create();
         $game = Game::create([
@@ -47,18 +47,32 @@ final class PublicGameNumbersTest extends TestCase
         $data = $response->json('data');
         $this->assertCount(3, $data);
 
+        $expectedIds = [
+            $reserved->id,
+            GameNumber::query()->where('game_id', $game->id)->where('number', 2)->value('id'),
+            GameNumber::query()->where('game_id', $game->id)->where('number', 3)->value('id'),
+        ];
+
         foreach ($data as $row) {
-            $this->assertSame(['number', 'status'], array_keys($row));
+            $this->assertSame(['id', 'number', 'status'], array_keys($row));
+            $this->assertContains($row['id'], $expectedIds);
+            $this->assertMatchesRegularExpression(
+                '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i',
+                $row['id'],
+            );
             $this->assertContains($row['status'], ['available', 'reserved', 'sold']);
             $this->assertIsInt($row['number']);
         }
 
         // Explicitly assert NO leaking fields.
         $json = json_encode($data);
+        $this->assertStringNotContainsString('game_id', $json);
         $this->assertStringNotContainsString('user_id', $json);
         $this->assertStringNotContainsString('order_id', $json);
         $this->assertStringNotContainsString('payment_id', $json);
         $this->assertStringNotContainsString('reservation_id', $json);
+        $this->assertStringNotContainsString('created_at', $json);
+        $this->assertStringNotContainsString('updated_at', $json);
         $this->assertStringNotContainsString((string) $owner->email, $json);
     }
 

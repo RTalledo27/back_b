@@ -35,4 +35,27 @@ return [
         ],
     ],
 
+    // ─── Social OAuth providers ───────────────────────────────────────────────
+
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
+    ],
+
+    'facebook' => [
+        'client_id' => env('FACEBOOK_CLIENT_ID'),
+        'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
+        'redirect' => env('FACEBOOK_REDIRECT_URI'),
+    ],
+
+    // ─── Social auth flow settings ────────────────────────────────────────────
+
+    'social_auth' => [
+        'frontend_url' => env('FRONTEND_URL', ''),
+        'state_ttl_seconds' => (int) env('AUTH_SOCIAL_STATE_TTL_SECONDS', 600),
+        'exchange_ttl_seconds' => (int) env('AUTH_SOCIAL_EXCHANGE_TTL_SECONDS', 300),
+        'reauth_ttl_seconds' => (int) env('AUTH_SOCIAL_REAUTH_TTL_SECONDS', 300),
+    ],
+
 ];

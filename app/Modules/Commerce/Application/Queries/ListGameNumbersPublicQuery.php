@@ -10,8 +10,8 @@ use App\Modules\RepeatNumberBingo\Domain\Models\GameNumber;
 use Illuminate\Database\Eloquent\Collection;
 
 /**
- * Public view of a game's numbers. Returns ONLY `{number, status}` —
- * never the holder identity, order or payment ids.
+ * Public view of a game's numbers. Returns ONLY `{id, number, status}` —
+ * never holder identity, relations or commerce-sensitive ids.
  */
 final class ListGameNumbersPublicQuery
 {

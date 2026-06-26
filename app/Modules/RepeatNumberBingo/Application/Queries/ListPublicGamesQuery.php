@@ -11,6 +11,8 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 /**
  * Public listing only shows games beyond the draft stage. Cancelled and
  * draft games are kept private.
+ *
+ * Visibility rule: GameStatus::publiclyVisible() — single source of truth.
  */
 final class ListPublicGamesQuery
 {
@@ -20,15 +22,7 @@ final class ListPublicGamesQuery
     public function paginate(int $perPage = 20): LengthAwarePaginator
     {
         return Game::query()
-            ->whereIn('status', [
-                GameStatus::Published,
-                GameStatus::SalesOpen,
-                GameStatus::SalesClosed,
-                GameStatus::Running,
-                GameStatus::Paused,
-                GameStatus::Resolving,
-                GameStatus::Completed,
-            ])
+            ->whereIn('status', GameStatus::publiclyVisible())
             ->orderByDesc('created_at')
             ->paginate($perPage);
     }

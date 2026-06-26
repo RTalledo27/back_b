@@ -9,11 +9,11 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * Public view of a game number — number + status ONLY.
+ * Public view of a game number.
  *
- * Deliberately omits: id, game_id, owner identity, order id, payment id,
- * reservation id, timestamps. The internal `id` is not exposed either,
- * to keep the public payload purely about state.
+ * Exposes the public reservation contract only: `id`, `number`, `status`.
+ * Deliberately omits: game_id, owner identity, order id, payment id,
+ * reservation id, timestamps and any other internal metadata.
  *
  * @mixin GameNumber
  */
@@ -25,6 +25,7 @@ final class PublicGameNumberResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
+            'id' => $this->id,
             'number' => (int) $this->number,
             'status' => $this->status->value,
         ];

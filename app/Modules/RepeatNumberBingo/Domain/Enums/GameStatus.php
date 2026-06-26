@@ -60,4 +60,26 @@ enum GameStatus: string
     {
         return [self::Published, self::SalesOpen, self::SalesClosed];
     }
+
+    /**
+     * Single source of truth for publicly visible games.
+     *
+     * Draft and Cancelled are never exposed to players. Any new GameStatus
+     * added to the enum must be explicitly placed here or in the private set,
+     * preventing silent inclusion bugs.
+     *
+     * @return list<self>
+     */
+    public static function publiclyVisible(): array
+    {
+        return [
+            self::Published,
+            self::SalesOpen,
+            self::SalesClosed,
+            self::Running,
+            self::Paused,
+            self::Resolving,
+            self::Completed,
+        ];
+    }
 }

@@ -13,6 +13,16 @@ use App\Modules\RepeatNumberBingo\Domain\Models\Game;
  */
 final class GamePolicy
 {
+    public function viewAny(User $user): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function view(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
     public function create(User $user): bool
     {
         return $user->isAdmin();

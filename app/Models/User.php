@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -66,5 +67,29 @@ class User extends Authenticatable
     public function isAdmin(): bool
     {
         return $this->role === UserRole::Admin;
+    }
+
+    /**
+     * @return HasMany<UserSocialAccount, $this>
+     */
+    public function socialAccounts(): HasMany
+    {
+        return $this->hasMany(UserSocialAccount::class);
+    }
+
+    /**
+     * @return HasMany<UserInvitation, $this>
+     */
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(UserInvitation::class);
+    }
+
+    /**
+     * @return HasMany<UserInvitation, $this>
+     */
+    public function sentInvitations(): HasMany
+    {
+        return $this->hasMany(UserInvitation::class, 'invited_by_user_id');
     }
 }

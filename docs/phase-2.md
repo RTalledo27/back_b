@@ -323,7 +323,15 @@ estado ni ejecutan compensaciones destructivas.
 
 | Método | Path | Acción |
 |--------|------|--------|
-| `GET` | `/api/v1/public/games/{slug}/numbers` | `{number, status}` solamente |
+| `GET` | `/api/v1/public/games/{slug}/numbers` | `{id, number, status}` solamente |
+
+Notas del contrato público de números:
+
+- `id` es el UUID real de `game_numbers`.
+- Ese mismo `id` debe enviarse dentro de `game_number_ids` al reservar.
+- Conocer el UUID no sustituye autenticación, validación de pertenencia,
+  disponibilidad, idempotencia ni concurrencia.
+- El contrato no expone `game_id`, identidades, relaciones ni metadata sensible.
 
 ---
 
