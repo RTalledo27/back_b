@@ -18,7 +18,7 @@ enum GameNumberStatus: string
         return match ($this) {
             self::Available => [self::Reserved],
             self::Reserved => [self::Available, self::Sold],
-            self::Sold => [],
+            self::Sold => [self::Available],  // Allowed for admin refunds: returns the number to the pool
         };
     }
 

@@ -20,7 +20,11 @@ declare(strict_types=1);
  */
 
 use App\Modules\Commerce\Application\Actions\ApprovePaymentAction;
+use App\Modules\Commerce\Application\Actions\ProcessWinnerPayoutAction;
+use App\Modules\Commerce\Application\Actions\RefundOrderAction;
 use App\Modules\Commerce\Application\DTOs\ApprovePaymentData;
+use App\Modules\Commerce\Application\DTOs\ProcessWinnerPayoutData;
+use App\Modules\Commerce\Application\DTOs\RefundOrderData;
 use App\Modules\RepeatNumberBingo\Application\Actions\DrawGameNumberAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\ExecuteScheduledGameDrawAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\RebuildGameNumberCountersAction;
@@ -38,6 +42,7 @@ use App\Modules\RepeatNumberBingo\Domain\ValueObjects\EngineTick;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Storage;
 use Tests\Support\DeterministicDrawNumberStrategy;
 
 $root = dirname(__DIR__, 2);
@@ -215,6 +220,77 @@ try {
             'payment_status' => $result->paymentStatus,
             'was_transition_applied' => $result->wasTransitionApplied,
             'paid_at' => $result->paidAt,
+        ]).PHP_EOL;
+        exit(0);
+    }
+
+    if ($action === 'refund') {
+        $result = $app->make(RefundOrderAction::class)->execute(
+            new RefundOrderData(
+                orderId: (string) ($args['ORDER_ID'] ?? ''),
+                actorUserId: (int) ($args['ACTOR_USER_ID'] ?? 0),
+                reason: (string) ($args['REASON'] ?? 'Concurrent refund test reason.'),
+                idempotencyKeyHash: hash('sha256', (string) ($args['IDEMPOTENCY_KEY'] ?? '')),
+                requestFingerprint: hash('sha256', implode("\n", [
+                    'operation=refund',
+                    'order_id='.(string) ($args['ORDER_ID'] ?? ''),
+                    'actor_user_id='.(int) ($args['ACTOR_USER_ID'] ?? 0),
+                    'reason='.mb_strtolower(trim((string) ($args['REASON'] ?? 'concurrent refund test reason.'))),
+                ])),
+            ),
+        );
+        echo json_encode([
+            'ok' => true,
+            'action' => 'refund',
+            'refund_id' => $result->refundId,
+            'order_id' => $result->orderId,
+            'refunded_cents' => $result->refundedCents,
+            'currency' => $result->currency,
+            'was_already_refunded' => $result->wasAlreadyRefunded,
+        ]).PHP_EOL;
+        exit(0);
+    }
+
+    if ($action === 'payout') {
+        // Create a real temp document for the payout (concurrency tests don't upload via HTTP)
+        $disk = 'winner_payouts';
+        $gameId = (string) ($args['GAME_ID'] ?? '');
+        $idempotencyKey = (string) ($args['IDEMPOTENCY_KEY'] ?? '');
+        $externalReference = (string) ($args['EXTERNAL_REFERENCE'] ?? 'OP-TEST-'.strtoupper(substr(md5($idempotencyKey), 0, 8)));
+        $notes = isset($args['NOTES']) ? (string) $args['NOTES'] : null;
+        $actorUserId = (int) ($args['ACTOR_USER_ID'] ?? 0);
+
+        // Write a temp file to the winner_payouts disk
+        $fileContent = 'payout-document-stub-'.$idempotencyKey;
+        $docSha256 = hash('sha256', $fileContent);
+        $docPath = 'payouts/concurrency-test/payout-'.substr(md5($idempotencyKey), 0, 8).'.pdf';
+        Storage::disk($disk)->put($docPath, $fileContent);
+
+        $result = $app->make(ProcessWinnerPayoutAction::class)->execute(
+            new ProcessWinnerPayoutData(
+                gameId: $gameId,
+                actorUserId: $actorUserId,
+                externalReference: $externalReference,
+                notes: $notes,
+                idempotencyKeyHash: hash('sha256', $idempotencyKey),
+                documentDisk: $disk,
+                documentPath: $docPath,
+                documentOriginalFilename: 'comprobante.pdf',
+                documentMimeType: 'application/pdf',
+                documentSizeBytes: strlen($fileContent),
+                documentSha256: $docSha256,
+            ),
+        );
+
+        echo json_encode([
+            'ok' => true,
+            'action' => 'payout',
+            'payout_id' => $result->payoutId,
+            'game_id' => $result->gameId,
+            'game_winner_id' => $result->gameWinnerId,
+            'amount_cents' => $result->amountCents,
+            'currency' => $result->currency,
+            'was_already_processed' => $result->wasAlreadyProcessed,
         ]).PHP_EOL;
         exit(0);
     }

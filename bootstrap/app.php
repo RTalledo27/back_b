@@ -14,6 +14,12 @@ use App\Modules\Commerce\Domain\Exceptions\IdempotencyKeyMismatch;
 use App\Modules\Commerce\Domain\Exceptions\InvalidOrderTransition;
 use App\Modules\Commerce\Domain\Exceptions\InvalidPaymentTransition;
 use App\Modules\Commerce\Domain\Exceptions\NumberNotAvailableForReservation;
+use App\Modules\Commerce\Domain\Exceptions\OrderNotRefundable;
+use App\Modules\Commerce\Domain\Exceptions\PayoutNotProcessable;
+use App\Modules\Commerce\Domain\Exceptions\RefundAmountMismatch;
+use App\Modules\Commerce\Domain\Exceptions\RefundNotFound;
+use App\Modules\Commerce\Domain\Exceptions\WinnerEntryNotRefundable;
+use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutNotFound;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\DrawnNumberOutOfRange;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameAlreadyCompleted;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameEngineAutomationActive;
@@ -290,6 +296,66 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => 'Internal draw engine error.',
                     'error' => 'internal_engine_error',
                 ], 500);
+            }
+        });
+
+        // Phase 6.2 — Refund error mapping.
+
+        $exceptions->render(function (OrderNotRefundable $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'order_not_refundable',
+                    'reason' => $e->reason,
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (WinnerEntryNotRefundable $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'winner_entry_not_refundable',
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (RefundAmountMismatch $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'refund_amount_mismatch',
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (RefundNotFound $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'refund_not_found',
+                ], 404);
+            }
+        });
+
+        // Phase 6.3 — WinnerPayout error mapping.
+
+        $exceptions->render(function (PayoutNotProcessable $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'payout_not_processable',
+                    'reason' => $e->reason,
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (WinnerPayoutNotFound $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'payout_not_found',
+                ], 404);
             }
         });
     })->create();

@@ -37,4 +37,5 @@ enum GameEventType: string
     case CountersRebuilt = 'counters_rebuilt';
     case EngineTicksSkipped = 'engine_ticks_skipped';
     case GameAutoPaused = 'game_auto_paused';
+    case OrderRefunded = 'order_refunded';
 }

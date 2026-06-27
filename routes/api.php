@@ -23,8 +23,12 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Admin\DownloadPaymentDocu
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminOrdersController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminPaymentsController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListGameNumbersAdminController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ProcessWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RefundOrderController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RejectPaymentController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowAdminPaymentController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowOrderRefundController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowWinnerPayoutController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\CancelOrderController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ListMyEntriesController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ListMyOrdersController;
@@ -182,6 +186,24 @@ Route::middleware(['auth:sanctum', 'admin'])
             ->name('admin.payment-document.download');
         Route::get('/orders', ListAdminOrdersController::class);
         Route::get('/games/{game}/numbers', ListGameNumbersAdminController::class);
+    });
+
+Route::middleware(['auth:sanctum', 'admin', 'idempotent'])
+    ->prefix('admin')
+    ->group(function (): void {
+        Route::post('/orders/{order}/refund', RefundOrderController::class)
+            ->name('admin.orders.refund.store');
+        Route::post('/games/{game}/winner/payout', ProcessWinnerPayoutController::class)
+            ->name('admin.games.winner.payout.store');
+    });
+
+Route::middleware(['auth:sanctum', 'admin'])
+    ->prefix('admin')
+    ->group(function (): void {
+        Route::get('/orders/{order}/refund', ShowOrderRefundController::class)
+            ->name('admin.orders.refund.show');
+        Route::get('/games/{game}/winner/payout', ShowWinnerPayoutController::class)
+            ->name('admin.games.winner.payout.show');
     });
 
 Route::middleware('auth:sanctum')->prefix('me')->group(function (): void {

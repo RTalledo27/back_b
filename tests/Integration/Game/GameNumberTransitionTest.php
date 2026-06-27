@@ -78,12 +78,22 @@ final class GameNumberTransitionTest extends TestCase
         $gn->transitionTo(GameNumberStatus::Sold);
     }
 
-    public function test_sold_is_terminal(): void
+    public function test_sold_to_available_is_allowed_for_admin_refunds(): void
+    {
+        $gn = $this->createGameNumber(GameNumberStatus::Sold);
+
+        $gn->transitionTo(GameNumberStatus::Available);
+        $gn->save();
+
+        $this->assertSame(GameNumberStatus::Available, $gn->refresh()->status);
+    }
+
+    public function test_sold_to_reserved_is_forbidden(): void
     {
         $gn = $this->createGameNumber(GameNumberStatus::Sold);
 
         $this->expectException(InvalidGameNumberTransition::class);
 
-        $gn->transitionTo(GameNumberStatus::Available);
+        $gn->transitionTo(GameNumberStatus::Reserved);
     }
 }
