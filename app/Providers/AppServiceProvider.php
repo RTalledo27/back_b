@@ -17,6 +17,7 @@ use App\Modules\RepeatNumberBingo\Infrastructure\Randomness\CryptographicallySec
 use App\Modules\RepeatNumberBingo\Presentation\Http\Policies\GamePolicy;
 use App\Services\Auth\SocialiteProviderAdapter;
 use App\Services\Auth\SocialProviderAdapter;
+use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -50,10 +51,41 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Payment::class, PaymentPolicy::class);
 
         $this->configureAuthRateLimiters();
+        $this->configurePasswordResetUrl();
+    }
+
+    private function configurePasswordResetUrl(): void
+    {
+        ResetPassword::createUrlUsing(function (mixed $notifiable, string $token): string {
+            $base = config('auth.password_reset_frontend_url')
+                ?: (config('app.url').'/reset-password');
+
+            return $base
+                .'?token='.rawurlencode($token)
+                .'&email='.rawurlencode((string) $notifiable->getEmailForPasswordReset());
+        });
     }
 
     private function configureAuthRateLimiters(): void
     {
+        RateLimiter::for('auth.forgot-password', function (Request $request): Limit {
+            return Limit::perMinute(5)
+                ->by($this->authThrottleKey($request, 'auth.forgot-password'))
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many authentication attempts.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('auth.reset-password', function (Request $request): Limit {
+            return Limit::perMinute(5)
+                ->by('auth.reset-password:'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many authentication attempts.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
         RateLimiter::for('auth.register', function (Request $request): Limit {
             return Limit::perMinute(5)
                 ->by($this->authThrottleKey($request, 'register'))

@@ -103,6 +103,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Password Reset Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | The URL the password reset notification will link to. Set
+    | FRONTEND_PASSWORD_RESET_URL in .env to point to your frontend. Falls
+    | back to APP_URL/reset-password when not configured.
+    |
+    */
+
+    'password_reset_frontend_url' => env('FRONTEND_PASSWORD_RESET_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Password Confirmation Timeout
     |--------------------------------------------------------------------------
     |

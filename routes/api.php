@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Admin\CreatePlayerController;
 use App\Http\Controllers\Auth\ActivateController;
+use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Auth\SocialAccountsController;
 use App\Http\Controllers\Auth\SocialCallbackController;
 use App\Http\Controllers\Auth\SocialExchangeController;
@@ -72,6 +74,10 @@ Route::prefix('auth')->group(function (): void {
         ->middleware('throttle:auth.login');
     Route::post('/activate', ActivateController::class)
         ->middleware('throttle:auth.activate');
+    Route::post('/forgot-password', ForgotPasswordController::class)
+        ->middleware('throttle:auth.forgot-password');
+    Route::post('/reset-password', ResetPasswordController::class)
+        ->middleware('throttle:auth.reset-password');
 
     Route::prefix('social')->group(function (): void {
         // ── Login flow (public) ───────────────────────────────────────────────

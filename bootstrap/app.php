@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\Auth\InvalidActivationTokenException;
+use App\Exceptions\Auth\PasswordResetException;
 use App\Exceptions\Auth\SocialAuthException;
 use App\Http\Middleware\EnsureIdempotencyKeyHeader;
 use App\Http\Middleware\EnsureUserIsAdmin;
@@ -60,6 +61,15 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => $e->getMessage(),
                     'error' => $e->errorCode,
                 ], $e->httpStatus);
+            }
+        });
+
+        $exceptions->render(function (PasswordResetException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'No se pudo restablecer la contraseña con los datos proporcionados.',
+                    'code' => 'password_reset_invalid',
+                ], 422);
             }
         });
 

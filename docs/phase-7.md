@@ -802,6 +802,93 @@ routes/api.php                         → 2 rutas nuevas + verified en rutas de
 
 ---
 
+## 14. Fase 7.2 — Password reset implementado
+
+### 14.1 Archivos creados
+
+| Archivo | Propósito |
+|---------|-----------|
+| `app/Exceptions/Auth/PasswordResetException.php` | Excepción lanzada cuando el broker retorna un estado distinto de `PASSWORD_RESET` |
+| `app/Http/Requests/Auth/ForgotPasswordRequest.php` | Valida y normaliza el email; expone `normalizedEmail()` |
+| `app/Http/Requests/Auth/ResetPasswordRequest.php` | Valida email, token y password; expone `toCredentials()` |
+| `app/Actions/Auth/SendPasswordResetLinkAction.php` | Llama al broker; loguea `auth.password_reset_requested` solo cuando se envía; devuelve `void` |
+| `app/Actions/Auth/ResetPasswordAction.php` | Llama al broker; callback con `DB::transaction` — cambia password, setea `email_verified_at`, revoca tokens Sanctum |
+| `app/Http/Controllers/Auth/ForgotPasswordController.php` | Invocable thin; siempre responde 200 (anti-enumeración) |
+| `app/Http/Controllers/Auth/ResetPasswordController.php` | Invocable thin; delega en `ResetPasswordAction`; 200 en éxito |
+| `tests/Feature/Auth/PasswordResetTest.php` | 27 tests / 67 assertions — flujo completo de forgot y reset |
+| `tests/Integration/Architecture/Phase7IdentityArchitectureTest.php` | 13 tests grep-based — invariantes estructurales |
+
+### 14.2 Archivos modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `config/auth.php` | Añadida clave `password_reset_frontend_url` |
+| `app/Providers/AppServiceProvider.php` | Añadidos rate limiters `auth.forgot-password` y `auth.reset-password`; añadido `configurePasswordResetUrl()` con `ResetPassword::createUrlUsing()` |
+| `bootstrap/app.php` | Añadido mapping `PasswordResetException → 422 code: password_reset_invalid` |
+| `routes/api.php` | Añadidas rutas `POST /auth/forgot-password` y `POST /auth/reset-password` |
+
+### 14.3 Endpoints implementados
+
+```
+POST  api/v1/auth/forgot-password   throttle:auth.forgot-password (5/min por IP+email)
+POST  api/v1/auth/reset-password    throttle:auth.reset-password  (5/min por IP)
+```
+
+Ambas rutas sin `auth:sanctum` — accesibles sin sesión activa.
+
+### 14.4 Decisiones de implementación
+
+| Decisión | Elegido |
+|----------|---------|
+| Respuesta `forgot-password` | HTTP 200 siempre con mensaje uniforme — nunca revela existencia del email |
+| URL de reset | `ResetPassword::createUrlUsing()` con `FRONTEND_PASSWORD_RESET_URL` env var; fallback a `APP_URL/reset-password` |
+| Transacción en reset | `DB::transaction` en callback de `Password::reset()`: password → `email_verified_at` → `tokens()->delete()` |
+| `email_verified_at` tras reset | Se setea solo si era `null`; si ya estaba seteado se preserva la fecha original |
+| Revocación de tokens Sanctum | `$user->tokens()->delete()` dentro de la misma transacción |
+| Usuarios social-only | Permitido — obtienen credencial local, se convierten en híbridos |
+| Usuarios invitados no activados | Permitido — equivalente funcional de la activación |
+| Error de broker | `PasswordResetException` → HTTP 422 con `code: password_reset_invalid` (no `error`) |
+| Log | `auth.password_reset_requested` (user_id, solo al enviar) y `auth.password_reset_completed` (user_id, al completar) |
+
+### 14.5 Rate limits añadidos
+
+| Nombre | Clave | Límite |
+|--------|-------|--------|
+| `auth.forgot-password` | `auth.forgot-password:{ip}:{normalized_email}` | 5/min |
+| `auth.reset-password` | `auth.reset-password:{ip}` | 5/min |
+
+### 14.6 Cobertura de tests
+
+**Feature** (`tests/Feature/Auth/PasswordResetTest.php` — 27 tests, 67 assertions):
+
+- `forgot-password`: HTTP 200 para email existente y no existente, mismo body (anti-enumeración), envía notificación solo si existe, no envía si no existe, valida formato, normaliza email con mayúsculas/espacios, está rate-limited, URL del link contiene `token=` y `email=`
+- `reset-password`: token válido actualiza password, token inválido → 422, token expirado → 422 (updated `created_at` en DB), requiere confirmación, longitud mínima 8, revoca todos los tokens Sanctum, setea `email_verified_at` si null, preserva `email_verified_at` si ya estaba seteado, permite usuario social-only (crea credencial local), permite invitado no activado, permite login con nueva password, rechaza login con password anterior, no cambia role, no toca `user_social_accounts`, no crea usuario para email desconocido, responses no exponen el token plano, rate limit activo
+- Rate limit tests usan IPs únicas para no interferir entre sí
+
+**Arquitectura** (`tests/Integration/Architecture/Phase7IdentityArchitectureTest.php` — 13 tests):
+
+- Controladores no llaman `DB::transaction`
+- `ResetPasswordAction` llama `DB::transaction` y `tokens()->delete()`
+- `ResetPasswordAction` maneja `email_verified_at`; `ResetPasswordController` no lo toca
+- Ningún controlador consulta `password_reset_tokens` directamente
+- `ForgotPasswordController` no ramifica en `RESET_LINK_SENT` ni `INVALID_USER`
+- Ninguna acción inserta en `password_reset_tokens` ni usa `DB::insert`
+- Acciones usan `Password::sendResetLink` / `Password::reset`; no `Mail::` ni `DB::statement`
+
+### 14.7 Verificación final
+
+```
+php artisan route:list --path=api/v1/auth --except-vendor  → 14 rutas, 2 nuevas
+php artisan test --compact tests/Feature/Auth/PasswordResetTest.php → 27 passed (67 assertions)
+php artisan test --compact tests/Integration/Architecture/Phase7IdentityArchitectureTest.php → 13 passed (19 assertions)
+php artisan test --compact tests/Feature/Auth tests/Integration/Auth tests/Integration/Architecture → 253 passed (779 assertions)
+php artisan test --compact tests/Feature/Commerce → 145 passed (684 assertions)
+```
+
+Cero fallos en suite completa de Auth + Commerce.
+
+---
+
 ## Apéndice — Hallazgos del audit (Fase 7.1)
 
 | Hallazgo | Impacto |
