@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\LogoutController;
 use App\Http\Controllers\Auth\MeController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\Auth\SendEmailVerificationNotificationController;
 use App\Http\Controllers\Auth\SocialAccountsController;
 use App\Http\Controllers\Auth\SocialCallbackController;
 use App\Http\Controllers\Auth\SocialExchangeController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Auth\SocialLinkCallbackController;
 use App\Http\Controllers\Auth\SocialLinkRedirectController;
 use App\Http\Controllers\Auth\SocialRedirectController;
 use App\Http\Controllers\Auth\UnlinkSocialAccountController;
+use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Modules\Commerce\Domain\Models\Order;
 use App\Modules\Commerce\Domain\Models\Payment;
 use App\Modules\Commerce\Domain\Models\PaymentDocument;
@@ -114,6 +116,14 @@ Route::prefix('auth')->group(function (): void {
         Route::get('/me', MeController::class);
         Route::get('/social-accounts', SocialAccountsController::class)
             ->name('auth.social-accounts.index');
+
+        // ── Email verification ────────────────────────────────────────────────
+        Route::post('/email/verification-notification', SendEmailVerificationNotificationController::class)
+            ->middleware('throttle:auth.resend-verification');
+
+        Route::post('/email/verify/{id}/{hash}', VerifyEmailController::class)
+            ->middleware(['signed', 'throttle:auth.verify-email'])
+            ->name('auth.email.verify');
     });
 });
 
@@ -170,10 +180,10 @@ Route::middleware(['auth:sanctum', 'admin'])
             ->name('admin.games.winner.show');
     });
 
-Route::middleware(['auth:sanctum', 'idempotent'])
+Route::middleware(['auth:sanctum', 'verified', 'idempotent'])
     ->post('/games/{game}/reservations', ReserveGameNumbersController::class);
 
-Route::middleware(['auth:sanctum', 'idempotent'])
+Route::middleware(['auth:sanctum', 'verified', 'idempotent'])
     ->post('/me/orders/{order}/payment-evidence', SubmitPaymentEvidenceController::class);
 
 Route::middleware(['auth:sanctum', 'admin', 'idempotent'])

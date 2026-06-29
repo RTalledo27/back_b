@@ -7,7 +7,7 @@ namespace Tests\Integration\Architecture;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Structural guards for Phase 7.2 (Password reset).
+ * Structural guards for Phase 7.2 (Password reset) and Phase 7.3 (Email verification).
  * Grep-based — no DB or Laravel boot needed.
  *
  * Key invariants defended here:
@@ -17,6 +17,11 @@ use PHPUnit\Framework\TestCase;
  *  4. Neither controller queries password_reset_tokens directly — the broker owns it.
  *  5. ForgotPasswordController does not branch on broker status (anti-enumeration).
  *  6. Token plain text is never written to password_reset_tokens by our code (broker hashes).
+ *  7. VerifyEmailAction uses hash_equals — no timing-attack-vulnerable comparison.
+ *  8. VerifyEmailAction checks id match before hash — fails fast without leaking timing.
+ *  9. VerifyEmailController does NOT own the id/hash validation — the action does.
+ * 10. SendEmailVerificationNotificationController returns uniform 200 (no branching on verified status).
+ * 11. EnsureEmailIsVerified returns 403 with code=email_not_verified, never redirects.
  */
 final class Phase7IdentityArchitectureTest extends TestCase
 {
@@ -31,6 +36,14 @@ final class Phase7IdentityArchitectureTest extends TestCase
     private const FORGOT_ACTION = self::AUTH_ACTIONS.'/SendPasswordResetLinkAction.php';
 
     private const RESET_ACTION = self::AUTH_ACTIONS.'/ResetPasswordAction.php';
+
+    private const SEND_VERIFICATION_CONTROLLER = self::AUTH_CONTROLLERS.'/SendEmailVerificationNotificationController.php';
+
+    private const VERIFY_EMAIL_CONTROLLER = self::AUTH_CONTROLLERS.'/VerifyEmailController.php';
+
+    private const VERIFY_EMAIL_ACTION = self::AUTH_ACTIONS.'/VerifyEmailAction.php';
+
+    private const ENSURE_VERIFIED_MIDDLEWARE = __DIR__.'/../../../app/Http/Middleware/EnsureEmailIsVerified.php';
 
     // ── 1. Controllers do NOT own DB::transaction ────────────────────────────
 
@@ -197,6 +210,104 @@ final class Phase7IdentityArchitectureTest extends TestCase
         $this->assertFalse(
             str_contains($content, 'DB::statement'),
             'ResetPasswordAction must not use raw DB::statement.',
+        );
+    }
+
+    // ── Phase 7.3 — Email verification ────────────────────────────────────────
+
+    public function test_verify_email_action_uses_hash_equals(): void
+    {
+        $content = file_get_contents(self::VERIFY_EMAIL_ACTION) ?: '';
+
+        $this->assertTrue(
+            str_contains($content, 'hash_equals'),
+            'VerifyEmailAction must use hash_equals() for constant-time hash comparison.',
+        );
+    }
+
+    public function test_verify_email_action_checks_id_and_hash(): void
+    {
+        $content = file_get_contents(self::VERIFY_EMAIL_ACTION) ?: '';
+
+        $this->assertTrue(
+            str_contains($content, 'getKey()'),
+            'VerifyEmailAction must compare route id against $user->getKey().',
+        );
+        $this->assertTrue(
+            str_contains($content, 'getEmailForVerification()'),
+            'VerifyEmailAction must use getEmailForVerification() to get the canonical email for hashing.',
+        );
+    }
+
+    public function test_verify_email_action_does_not_change_tokens_or_role(): void
+    {
+        $content = file_get_contents(self::VERIFY_EMAIL_ACTION) ?: '';
+
+        $this->assertFalse(
+            str_contains($content, 'tokens()'),
+            'VerifyEmailAction must not touch Sanctum tokens.',
+        );
+        $this->assertFalse(
+            str_contains($content, 'role'),
+            'VerifyEmailAction must not touch user role.',
+        );
+    }
+
+    public function test_verify_email_controller_does_not_validate_id_or_hash(): void
+    {
+        $content = file_get_contents(self::VERIFY_EMAIL_CONTROLLER) ?: '';
+
+        $this->assertFalse(
+            str_contains($content, 'hash_equals'),
+            'VerifyEmailController must not perform hash comparison — the action owns it.',
+        );
+        $this->assertFalse(
+            str_contains($content, 'getKey()'),
+            'VerifyEmailController must not compare user id — the action owns it.',
+        );
+    }
+
+    public function test_send_verification_controller_returns_200_without_branching_on_verified_status(): void
+    {
+        $content = file_get_contents(self::SEND_VERIFICATION_CONTROLLER) ?: '';
+
+        $this->assertFalse(
+            str_contains($content, 'hasVerifiedEmail'),
+            'SendEmailVerificationNotificationController must not branch on hasVerifiedEmail() — '
+            .'the action decides; the controller always returns 200.',
+        );
+    }
+
+    public function test_ensure_email_is_verified_returns_json_not_redirect(): void
+    {
+        $content = file_get_contents(self::ENSURE_VERIFIED_MIDDLEWARE) ?: '';
+
+        $this->assertTrue(
+            str_contains($content, 'response()->json'),
+            'EnsureEmailIsVerified must return a JSON response, not a redirect.',
+        );
+        $this->assertFalse(
+            str_contains($content, 'redirect('),
+            'EnsureEmailIsVerified must not redirect — it must return 403 JSON.',
+        );
+        $this->assertTrue(
+            str_contains($content, 'email_not_verified'),
+            "EnsureEmailIsVerified must include code 'email_not_verified' in the response.",
+        );
+    }
+
+    public function test_verify_email_notification_uses_temporary_signed_route(): void
+    {
+        $notificationPath = __DIR__.'/../../../app/Notifications/Auth/VerifyEmailNotification.php';
+        $content = file_get_contents($notificationPath) ?: '';
+
+        $this->assertTrue(
+            str_contains($content, 'temporarySignedRoute'),
+            'VerifyEmailNotification must use URL::temporarySignedRoute() for the verification link.',
+        );
+        $this->assertFalse(
+            str_contains($content, 'signedRoute('),
+            'VerifyEmailNotification must use temporarySignedRoute (TTL), not signedRoute (no TTL).',
         );
     }
 }

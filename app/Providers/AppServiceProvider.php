@@ -68,6 +68,28 @@ class AppServiceProvider extends ServiceProvider
 
     private function configureAuthRateLimiters(): void
     {
+        RateLimiter::for('auth.resend-verification', function (Request $request): Limit {
+            $userId = $request->user()?->id ?? 'anonymous';
+
+            return Limit::perMinutes(10, 3)
+                ->by('auth.resend-verification:'.$userId)
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many authentication attempts.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('auth.verify-email', function (Request $request): Limit {
+            $userId = $request->user()?->id ?? 'anonymous';
+
+            return Limit::perMinute(6)
+                ->by('auth.verify-email:'.$userId.':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many authentication attempts.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
         RateLimiter::for('auth.forgot-password', function (Request $request): Limit {
             return Limit::perMinute(5)
                 ->by($this->authThrottleKey($request, 'auth.forgot-password'))

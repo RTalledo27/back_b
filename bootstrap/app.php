@@ -1,8 +1,10 @@
 <?php
 
+use App\Exceptions\Auth\EmailVerificationException;
 use App\Exceptions\Auth\InvalidActivationTokenException;
 use App\Exceptions\Auth\PasswordResetException;
 use App\Exceptions\Auth\SocialAuthException;
+use App\Http\Middleware\EnsureEmailIsVerified;
 use App\Http\Middleware\EnsureIdempotencyKeyHeader;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Modules\Commerce\Domain\Exceptions\EvidenceRejected;
@@ -39,6 +41,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Exceptions\InvalidSignatureException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -52,9 +55,28 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
             'idempotent' => EnsureIdempotencyKeyHeader::class,
+            'verified' => EnsureEmailIsVerified::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (InvalidSignatureException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'No se pudo verificar el correo con los datos proporcionados.',
+                    'code' => 'email_verification_invalid',
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (EmailVerificationException $e, Request $request) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'No se pudo verificar el correo con los datos proporcionados.',
+                    'code' => 'email_verification_invalid',
+                ], 422);
+            }
+        });
+
         $exceptions->render(function (SocialAuthException $e, Request $request) {
             if ($request->expectsJson()) {
                 return response()->json([

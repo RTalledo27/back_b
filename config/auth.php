@@ -116,6 +116,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Email Verification
+    |--------------------------------------------------------------------------
+    |
+    | TTL in minutes for the signed email verification link. Set
+    | FRONTEND_EMAIL_VERIFY_URL to redirect the link to your frontend SPA;
+    | falls back to the signed backend URL when not configured.
+    |
+    */
+
+    'email_verify_ttl_minutes' => env('AUTH_EMAIL_VERIFY_TTL_MINUTES', 60),
+
+    'email_verify_frontend_url' => env('FRONTEND_EMAIL_VERIFY_URL'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Password Confirmation Timeout
     |--------------------------------------------------------------------------
     |

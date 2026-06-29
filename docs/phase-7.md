@@ -889,6 +889,122 @@ Cero fallos en suite completa de Auth + Commerce.
 
 ---
 
+## 15. Fase 7.3 — Email verification implementado
+
+### 15.1 Archivos creados
+
+| Archivo | Propósito |
+|---------|-----------|
+| `app/Exceptions/Auth/EmailVerificationException.php` | Excepción lanzada por `VerifyEmailAction` en id/hash mismatch → 422 |
+| `app/Http/Middleware/EnsureEmailIsVerified.php` | Middleware `verified`; 403 JSON `email_not_verified` si no verificado |
+| `app/Notifications/Auth/VerifyEmailNotification.php` | Notificación con URL firmada; soporta `FRONTEND_EMAIL_VERIFY_URL` |
+| `app/Actions/Auth/SendEmailVerificationNotificationAction.php` | Envía `VerifyEmailNotification` solo si no verificado; loguea |
+| `app/Actions/Auth/VerifyEmailAction.php` | Valida id + hash_equals(sha1, hash); idempotente si ya verificado; `forceFill email_verified_at` |
+| `app/Http/Controllers/Auth/SendEmailVerificationNotificationController.php` | Thin controller; siempre 200 |
+| `app/Http/Controllers/Auth/VerifyEmailController.php` | Thin controller; delega en `VerifyEmailAction` |
+| `tests/Feature/Auth/EmailVerificationTest.php` | 16 tests — resend, verify, behavioral |
+| `tests/Feature/Commerce/EmailVerificationCommerceTest.php` | 7 tests — middleware en reservations + evidence + read endpoints |
+
+### 15.2 Archivos modificados
+
+| Archivo | Cambio |
+|---------|--------|
+| `app/Models/User.php` | Activa `MustVerifyEmail`; override `sendEmailVerificationNotification()` con `VerifyEmailNotification` |
+| `config/auth.php` | Añadidas claves `email_verify_ttl_minutes` y `email_verify_frontend_url` |
+| `app/Providers/AppServiceProvider.php` | Añadidos rate limiters `auth.resend-verification` (3/10 min por user_id) y `auth.verify-email` (6/min por user_id+IP) |
+| `bootstrap/app.php` | Añadidos mappings `InvalidSignatureException → 422 email_verification_invalid` y `EmailVerificationException → 422 email_verification_invalid`; alias `verified → EnsureEmailIsVerified` |
+| `routes/api.php` | Añadidas 2 rutas auth; `verified` añadido a rutas de reservations y payment-evidence |
+| `tests/Integration/Architecture/Phase7IdentityArchitectureTest.php` | 7 guards adicionales para Fase 7.3 (hash_equals, no redirect en middleware, temporarySignedRoute, etc.) |
+
+### 15.3 Endpoints implementados
+
+```
+POST  api/v1/auth/email/verification-notification   auth:sanctum, throttle:auth.resend-verification
+POST  api/v1/auth/email/verify/{id}/{hash}          auth:sanctum, signed, throttle:auth.verify-email
+                                                     name: auth.email.verify
+```
+
+Endpoints con `verified` middleware añadido:
+```
+POST  api/v1/games/{game}/reservations              auth:sanctum, verified, idempotent
+POST  api/v1/me/orders/{order}/payment-evidence     auth:sanctum, verified, idempotent
+```
+
+### 15.4 Decisiones de implementación
+
+| Decisión | Elegido |
+|----------|---------|
+| URL firmada | `URL::temporarySignedRoute('auth.email.verify', ...)` — sin persistencia, firmada con `APP_KEY` |
+| Hash del email en la URL | `sha1($user->getEmailForVerification())` — coincide con el estándar Laravel MustVerifyEmail |
+| Comparación de hash | `hash_equals()` — comparación en tiempo constante para evitar timing attacks |
+| Frontend URL | Si `FRONTEND_EMAIL_VERIFY_URL` configurado: parsea query string del signed backend URL y construye URL frontend; firma sigue siendo validada al hacer POST al backend |
+| URL notificación | `sendEmailVerificationNotification()` override en `User`; delega en `VerifyEmailNotification` |
+| `verified` middleware | Custom `EnsureEmailIsVerified`; 403 JSON con `code: email_not_verified` (no redirect) |
+| `InvalidSignatureException` | Mapeado a 422 `email_verification_invalid` para requests JSON |
+| Respuesta resend | Siempre 200 — anti-enumeración de estado de verificación |
+| Idempotencia en verify | Si `hasVerifiedEmail()` → retorna sin modificar `email_verified_at` |
+| Protección endpoints admin | No se aplica `verified` — acceso controlado por role |
+| Protección endpoints de lectura | No se aplica `verified` — `/me/orders`, `/me/entries`, `/me/reservations` accesibles sin verificar |
+
+### 15.5 Rate limits añadidos
+
+| Nombre | Clave | Límite |
+|--------|-------|--------|
+| `auth.resend-verification` | `auth.resend-verification:{user_id}` | 3 por 10 min |
+| `auth.verify-email` | `auth.verify-email:{user_id}:{ip}` | 6/min |
+
+### 15.6 Comportamiento por tipo de usuario (actualizado)
+
+| Tipo | `email_verified_at` | Puede reservar | Puede enviar evidencia |
+|------|---------------------|----------------|------------------------|
+| Local (registrado) | NULL | ✗ 403 email_not_verified | ✗ 403 email_not_verified |
+| Local verificado | `timestamp` | ✓ | ✓ |
+| Social Google (verified) | `timestamp` | ✓ | ✓ |
+| Social Facebook (unverified) | Rechazado — no se crea usuario | N/A | N/A |
+| Invitado activado sin verificar | NULL | ✗ | ✗ |
+| Admin | `timestamp` o NULL | Por rol (no afectado) | Por rol (no afectado) |
+
+### 15.7 Cobertura de tests
+
+**Feature Auth** (`tests/Feature/Auth/EmailVerificationTest.php` — 16 tests, 48 assertions):
+
+- resend: 200 + notification para no verificado; 200 + sin notification para verificado; 401 sin auth; 429 tras 3 requests
+- verify: 200 + email_verified_at set para URL válida; idempotente si ya verificado; 422 id mismatch; 422 hash mismatch; 422 URL expirada; 422 firma adulterada; 401 sin auth; `/me` refleja `email_verified: true` tras verificar; 429 tras 6 requests
+- behavioral: local register → unverified; Google OAuth → verified; Facebook unverified email → rejected (no user created, `error=verified_email_required`)
+
+**Feature Commerce** (`tests/Feature/Commerce/EmailVerificationCommerceTest.php` — 7 tests, 9 assertions):
+
+- Unverified cannot POST reservation → 403 `email_not_verified`
+- Verified can POST reservation → 201
+- Unverified cannot POST payment-evidence → 403 `email_not_verified`
+- Verified can POST payment-evidence → 200
+- Unverified can GET `/me/orders` → 200
+- Unverified can GET `/me/entries` → 200
+- Unverified can GET `/public/games` → 200
+
+**Arquitectura** (`Phase7IdentityArchitectureTest.php` — 20 tests, 32 assertions — incluye 7 guards Fase 7.3):
+
+- `VerifyEmailAction` usa `hash_equals` y `getEmailForVerification`
+- `VerifyEmailAction` no toca tokens ni role
+- `VerifyEmailController` no valida id/hash (la acción lo hace)
+- `SendEmailVerificationNotificationController` no ramifica en `hasVerifiedEmail`
+- `EnsureEmailIsVerified` retorna JSON, no redirect; incluye `email_not_verified`
+- `VerifyEmailNotification` usa `temporarySignedRoute` (con TTL), no `signedRoute`
+
+### 15.8 Verificación final
+
+```
+php artisan route:list --path=api/v1/auth --except-vendor  → 16 rutas, 2 nuevas (verification-notification, verify)
+php artisan test --compact tests/Feature/Auth/EmailVerificationTest.php → 16 passed (48 assertions)
+php artisan test --compact tests/Feature/Commerce/EmailVerificationCommerceTest.php → 7 passed (9 assertions)
+php artisan test --compact tests/Integration/Architecture/Phase7IdentityArchitectureTest.php → 20 passed (32 assertions)
+php artisan test --compact tests/Feature/Auth tests/Feature/Commerce tests/Integration/Architecture → 418 passed (1446 assertions)
+```
+
+Cero fallos — zero regressions en suite completa.
+
+---
+
 ## Apéndice — Hallazgos del audit (Fase 7.1)
 
 | Hallazgo | Impacto |
