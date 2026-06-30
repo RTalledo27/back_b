@@ -23,6 +23,7 @@ use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEntry;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameNumber;
+use App\Modules\Shared\Application\Actions\RecordOutboxEventAction;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -66,6 +67,8 @@ use LogicException;
  */
 final class ApprovePaymentAction
 {
+    public function __construct(private readonly RecordOutboxEventAction $recordOutbox) {}
+
     public function execute(ApprovePaymentData $data): ApprovePaymentResult
     {
         return DB::transaction(
@@ -253,6 +256,24 @@ final class ApprovePaymentAction
             'actor_user_id' => $data->reviewerUserId,
             'occurred_at' => now(),
         ]);
+
+        // Outbox: durable at-least-once delivery of PaymentApproved.
+        // Runs inside the same transaction; ON CONFLICT DO NOTHING on the
+        // deduplication_key keeps the transaction alive if replayed.
+        $this->recordOutbox->execute(
+            eventType: 'payment_approved',
+            aggregateType: 'payment',
+            payload: [
+                'schema_version' => 1,
+                'payment_id' => $payment->id,
+                'order_id' => $order->id,
+                'game_id' => $order->game_id,
+                'buyer_user_id' => $order->user_id,
+                'occurred_at' => now()->toIso8601String(),
+            ],
+            aggregateId: $payment->id,
+            deduplicationKey: 'payment_approved:'.$payment->id,
+        );
 
         return new ApprovePaymentResult(
             paymentId: $payment->id,

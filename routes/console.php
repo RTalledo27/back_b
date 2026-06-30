@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Modules\Commerce\Application\Jobs\ExpirePendingOrdersJob;
 use App\Modules\RepeatNumberBingo\Application\Jobs\DispatchDueGameDrawsJob;
+use App\Modules\Shared\Application\Jobs\ProcessOutboxEventsJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -65,3 +66,22 @@ match ($pollSeconds) {
 };
 
 $engineDispatcher->withoutOverlapping(1);
+
+/*
+|--------------------------------------------------------------------------
+| Shared — outbox event processor
+|--------------------------------------------------------------------------
+|
+| Polls the outbox_events table every minute for events that are ready to
+| deliver (processed_at IS NULL, available_at <= NOW(), retry backoff
+| elapsed, no fresh lock).  Delivery semantics are at-least-once; each
+| consumer handler must be idempotent.
+|
+| withoutOverlapping(2): scheduler-level mutex (MINUTES) so that a slow
+| batch does not overlap the next invocation.  For multi-server setups
+| add ->onOneServer() once a shared cache driver is configured.
+|
+*/
+Schedule::job(new ProcessOutboxEventsJob)
+    ->everyMinute()
+    ->withoutOverlapping(2);
