@@ -245,6 +245,30 @@ final class EmailVerificationTest extends TestCase
             ->assertJson(['error' => 'too_many_requests']);
     }
 
+    // ── Security / hardening ──────────────────────────────────────────────────
+
+    public function test_login_is_not_blocked_globally_for_unverified_user(): void
+    {
+        $user = User::factory()->unverified()->create();
+        $token = $user->createToken('session', ['player:access'])->plainTextToken;
+
+        $this->withToken($token)
+            ->getJson('/api/v1/auth/me')
+            ->assertOk()
+            ->assertJsonPath('data.email_verified', false);
+    }
+
+    public function test_me_endpoint_exposes_email_verified_at_as_null_when_unverified(): void
+    {
+        $user = User::factory()->unverified()->create();
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/auth/me')
+            ->assertOk()
+            ->assertJsonPath('data.email_verified', false)
+            ->assertJsonPath('data.email_verified_at', null);
+    }
+
     // ── Behavioral ────────────────────────────────────────────────────────────
 
     public function test_local_registration_creates_unverified_user(): void

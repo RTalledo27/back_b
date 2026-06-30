@@ -425,6 +425,23 @@ final class PasswordResetTest extends TestCase
         $this->assertStringNotContainsString($plainToken, (string) $resetBody);
     }
 
+    public function test_reset_password_with_mismatched_email_returns_422(): void
+    {
+        Notification::fake();
+        $userA = User::factory()->unverified()->create();
+        $userB = User::factory()->unverified()->create();
+
+        $token = Password::broker()->createToken($userA);
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'email' => $userB->email,
+            'token' => $token,
+            'password' => 'newSecurePass1',
+            'password_confirmation' => 'newSecurePass1',
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 'password_reset_invalid');
+    }
+
     public function test_reset_password_is_rate_limited(): void
     {
         $ip = '10.0.1.1';

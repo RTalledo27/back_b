@@ -7,7 +7,7 @@ namespace Tests\Integration\Architecture;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Structural guards for Phase 7.2 (Password reset) and Phase 7.3 (Email verification).
+ * Structural guards for Phase 7.2 (Password reset), 7.3 (Email verification) and 7.4 (Hardening).
  * Grep-based — no DB or Laravel boot needed.
  *
  * Key invariants defended here:
@@ -22,6 +22,10 @@ use PHPUnit\Framework\TestCase;
  *  9. VerifyEmailController does NOT own the id/hash validation — the action does.
  * 10. SendEmailVerificationNotificationController returns uniform 200 (no branching on verified status).
  * 11. EnsureEmailIsVerified returns 403 with code=email_not_verified, never redirects.
+ * 12. verified is registered only as an alias, never as a global middleware.
+ * 13. No 2FA/SMS/phone/magic-link files exist in auth directories.
+ * 14. AuthUserResource contains no Eloquent queries.
+ * 15. verified is applied only to the two commerce write endpoints.
  */
 final class Phase7IdentityArchitectureTest extends TestCase
 {
@@ -308,6 +312,83 @@ final class Phase7IdentityArchitectureTest extends TestCase
         $this->assertFalse(
             str_contains($content, 'signedRoute('),
             'VerifyEmailNotification must use temporarySignedRoute (TTL), not signedRoute (no TTL).',
+        );
+    }
+
+    // ── Phase 7.4 — Security hardening guards ────────────────────────────────
+
+    public function test_verified_is_registered_only_as_alias_not_as_global_middleware(): void
+    {
+        $bootstrapPath = __DIR__.'/../../../bootstrap/app.php';
+        $content = file_get_contents($bootstrapPath) ?: '';
+
+        $this->assertFalse(
+            (bool) preg_match('/->append\s*\(\s*[\'"]?verified/', $content),
+            'verified must not be appended as a global middleware.',
+        );
+        $this->assertFalse(
+            (bool) preg_match('/->prepend\s*\(\s*[\'"]?verified/', $content),
+            'verified must not be prepended as a global middleware.',
+        );
+        $this->assertFalse(
+            (bool) preg_match('/->api\s*\(\s*[\'"]?verified/', $content),
+            'verified must not be injected into the api middleware group globally.',
+        );
+        $this->assertStringContainsString(
+            "'verified' => EnsureEmailIsVerified::class",
+            $content,
+            'verified must be registered as a route alias in bootstrap/app.php.',
+        );
+    }
+
+    public function test_no_2fa_sms_phone_or_magic_link_files_exist_in_auth(): void
+    {
+        $dirs = [
+            __DIR__.'/../../../app/Http/Controllers/Auth',
+            __DIR__.'/../../../app/Actions/Auth',
+            __DIR__.'/../../../app/Notifications/Auth',
+        ];
+        $forbidden = ['2fa', 'twofactor', 'mfa', 'sms', 'magiclink', 'totp', 'phonelogin'];
+
+        foreach ($dirs as $dir) {
+            if (! is_dir($dir)) {
+                continue;
+            }
+            foreach (glob($dir.'/*.php') ?: [] as $file) {
+                $filename = strtolower(basename($file));
+                foreach ($forbidden as $keyword) {
+                    $this->assertStringNotContainsString(
+                        $keyword,
+                        $filename,
+                        "File {$file} suggests unauthorized 2FA/SMS/phone/magic-link implementation.",
+                    );
+                }
+            }
+        }
+    }
+
+    public function test_auth_user_resource_contains_no_eloquent_queries(): void
+    {
+        $resourcePath = __DIR__.'/../../../app/Http/Resources/Auth/AuthUserResource.php';
+        $content = file_get_contents($resourcePath) ?: '';
+
+        foreach (['::find(', '::where(', '::query(', 'DB::', '->with('] as $needle) {
+            $this->assertFalse(
+                str_contains($content, $needle),
+                "AuthUserResource must not contain Eloquent queries ({$needle}) — it must only read from the hydrated model.",
+            );
+        }
+    }
+
+    public function test_verified_middleware_applied_only_to_commerce_write_endpoints(): void
+    {
+        $routesPath = __DIR__.'/../../../routes/api.php';
+        $content = file_get_contents($routesPath) ?: '';
+
+        $this->assertSame(
+            2,
+            substr_count($content, "'verified'"),
+            "The 'verified' middleware must appear in routes/api.php exactly twice — only for reservations and payment-evidence POST endpoints.",
         );
     }
 }
