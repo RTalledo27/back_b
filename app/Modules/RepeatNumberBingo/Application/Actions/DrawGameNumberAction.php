@@ -24,6 +24,7 @@ use App\Modules\RepeatNumberBingo\Domain\Models\GameEntry;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameNumber;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
+use App\Modules\Shared\Application\Actions\RecordOutboxEventAction;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -58,6 +59,7 @@ final class DrawGameNumberAction
     public function __construct(
         private readonly DrawNumberStrategy $drawStrategy,
         private readonly CommittedDrawEventsDispatcher $events,
+        private readonly RecordOutboxEventAction $recordOutbox,
     ) {}
 
     public function execute(DrawGameNumberData $data): DrawGameNumberResult
@@ -263,7 +265,7 @@ final class DrawGameNumberAction
                 // of evaluation. They will frequently coincide, but the
                 // domain rule is drawn_at <= won_at, not equality.
                 $completedAt = CarbonImmutable::now();
-                $this->resolveWinner($game, $gameNumber, $entry, $drawId, $currentHits, $sequence, $completedAt, $data->actorUserId);
+                $this->resolveWinner($game, $gameNumber, $entry, $drawId, $currentHits, $sequence, $completedAt, $data->actorUserId, $this->recordOutbox);
                 $winnerCreated = true;
                 $winnerEntryId = $entry->id;
                 $gameStatusForResult = GameStatus::Completed->value;
@@ -333,6 +335,7 @@ final class DrawGameNumberAction
         int $sequence,
         CarbonImmutable $completedAt,
         ?int $actorUserId,
+        RecordOutboxEventAction $recordOutbox,
     ): void {
         // Revalidate the aggregate one more time — the row was lockForUpdate'd,
         // but defensive equality here surfaces any miswired data immediately.
@@ -421,6 +424,22 @@ final class DrawGameNumberAction
             'actor_user_id' => $actorUserId,
             'occurred_at' => $completedAt,
         ]);
+
+        $recordOutbox->execute(
+            eventType: 'game_winner_declared',
+            aggregateType: 'game',
+            payload: [
+                'schema_version' => 1,
+                'game_winner_id' => (string) $winner->id,
+                'game_id' => (string) $game->id,
+                'game_draw_id' => $drawId,
+                'game_number_id' => (string) $gameNumber->id,
+                'winner_user_id' => (int) $entry->user_id,
+                'occurred_at' => $completedAt->toIso8601String(),
+            ],
+            aggregateId: (string) $game->id,
+            deduplicationKey: 'game_winner_declared:'.(string) $game->id,
+        );
     }
 
     /**

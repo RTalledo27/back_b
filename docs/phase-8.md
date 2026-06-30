@@ -957,4 +957,134 @@ No implementado (pendiente Fases 8.3 / 9):
 - Notificaciones reales (email provider, WhatsApp)
 - Panel admin de outbox, métricas, cleanup histórico
 - Multi-queue, prioridad
+
+---
+
+## Fase 8.3 — Eventos críticos integrados
+
+### Alcance
+
+Expansión del patrón Outbox a los 4 eventos críticos restantes del dominio. La infraestructura (tabla, `RecordOutboxEventAction`, `OutboxEventProcessor`, `ProcessOutboxEventsJob`) no cambia; solo se añaden inserciones en los actions correspondientes y se extiende el dispatcher.
+
+### Eventos integrados
+
+| Evento              | Action                       | aggregate_type | deduplication_key                             |
+|---------------------|------------------------------|----------------|-----------------------------------------------|
+| `payment_rejected`  | `RejectPaymentAction`        | `payment`      | `payment_rejected:{payment_id}`               |
+| `order_refunded`    | `RefundOrderAction`          | `order`        | `order_refunded:{order_id}`                   |
+| `winner_payout_registered` | `ProcessWinnerPayoutAction` | `game_winner` | `winner_payout_registered:{game_winner_id}`  |
+| `game_winner_declared` | `DrawGameNumberAction` (en `resolveWinner()`) | `game` | `game_winner_declared:{game_id}` |
+
+### Payloads (schema_version: 1)
+
+**payment_rejected**
+```json
+{
+  "schema_version": 1,
+  "payment_id": "...",
+  "order_id": "...",
+  "game_id": "...",
+  "buyer_user_id": 42,
+  "occurred_at": "2026-06-30T21:00:00+00:00"
+}
+```
+
+**order_refunded**
+```json
+{
+  "schema_version": 1,
+  "refund_id": "...",
+  "order_id": "...",
+  "payment_id": "...",
+  "game_id": "...",
+  "buyer_user_id": 42,
+  "occurred_at": "2026-06-30T21:00:00+00:00"
+}
+```
+
+**winner_payout_registered**
+```json
+{
+  "schema_version": 1,
+  "winner_payout_id": "...",
+  "game_winner_id": "...",
+  "game_id": "...",
+  "winner_user_id": 42,
+  "occurred_at": "2026-06-30T21:00:00+00:00"
+}
+```
+
+**game_winner_declared**
+```json
+{
+  "schema_version": 1,
+  "game_winner_id": "...",
+  "game_id": "...",
+  "game_draw_id": "...",
+  "game_number_id": "...",
+  "winner_user_id": 42,
+  "occurred_at": "2026-06-30T21:00:00+00:00"
+}
+```
+
+### Privacidad
+
+Los payloads contienen **únicamente IDs** (nunca datos personales). Campos excluidos por política:
+
+- `email`, `name`, `phone` — PII directo
+- `reason`, `reviewer_user_id` — motivo/revisor de rechazo no se propaga
+- `path`, `disk`, `sha256`, `original_filename` — metadatos de documento de pago
+- `external_reference` — referencia bancaria externa sensible
+- `idempotency_key_hash`, `request_fingerprint` — claves de control interno
+
+### Dispatcher (Fase 8.3)
+
+El `match()` de `OutboxEventDispatcher::dispatch()` maneja 5 tipos:
+
+```
+payment_approved         → handlePaymentApproved()         (Fase 8.2)
+payment_rejected         → handlePaymentRejected()         (Fase 8.3, no-op log)
+order_refunded           → handleOrderRefunded()           (Fase 8.3, no-op log)
+winner_payout_registered → handleWinnerPayoutRegistered()  (Fase 8.3, no-op log)
+game_winner_declared     → handleGameWinnerDeclared()      (Fase 8.3, no-op log)
+default                  → throw RuntimeException
+```
+
+Cada handler registra en log (`outbox.{event_type}.delivered`) únicamente los IDs del payload. **No envía ninguna notificación real.** Los proveedores reales (email, WhatsApp, gateway) llegan en Fase 9.
+
+### Idempotencia
+
+- **Nivel dominio**: la rama de replay existente en cada action (`wasTransitionApplied: false`, `wasAlreadyRefunded: true`, `wasAlreadyProcessed: true`) retorna temprano **sin** insertar outbox.
+- **Nivel outbox**: `ON CONFLICT DO NOTHING` sobre el índice parcial `(deduplication_key) WHERE processed_at IS NULL` garantiza que reinicios del worker no duplican entregas.
+
+### Tests agregados en Fase 8.3
+
+| Archivo | Tests | Assertions |
+|---------|-------|------------|
+| `tests/Integration/Commerce/OutboxPaymentRejectedIntegrationTest.php` | 6 | — |
+| `tests/Integration/Commerce/OutboxOrderRefundedIntegrationTest.php` | 6 | — |
+| `tests/Integration/Commerce/OutboxWinnerPayoutIntegrationTest.php` | 5 | — |
+| `tests/Integration/Game/OutboxGameWinnerDeclaredIntegrationTest.php` | 6 | — |
+| `tests/Integration/Shared/OutboxDispatcherPhase83Test.php` | 8 | — |
+| `tests/Unit/Architecture/Phase83OutboxArchitectureTest.php` | 11 | — |
+
+También se actualizó `tests/Unit/Game/DrawGameNumberActionArchitectureTest.php` para reflejar el nuevo 3.º parámetro del constructor de `DrawGameNumberAction` (`RecordOutboxEventAction`).
+
+### Límites explícitos de Fase 8.3
+
+**No implementado** (reservado para fases siguientes):
+
+- Notificaciones reales: email, WhatsApp, SMS, cualquier canal externo
+- Gateway de pagos, webhooks externos
+- Panel admin de outbox, métricas, cleanup histórico de eventos procesados
+- Múltiples queues, prioridad de eventos
+- Eventos opcionales: `GameCompleted`, `GameCancelled`, `OrderReservationsExpired`,
+  `OrderCancelledByUser`, `GameStarted`, `PaymentEvidenceSubmitted`
+- Frontend, dashboard de seguimiento
+
+Los dispatches legacy existentes (Fase 1–7) permanecen **sin modificar** como best-effort hasta Fase 9.
+
+### Confirmación de no-regresión
+
+Full suite tras Fase 8.3: **≥ 1260 passed / 0 failures** (los 3 fallos de concurrencia en `Feature/Game` son pre-existentes de infraestructura Docker y no aparecen en el full suite secuencial).
 - Webhooks externos

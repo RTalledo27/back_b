@@ -27,6 +27,7 @@ use App\Modules\RepeatNumberBingo\Domain\Models\GameEntry;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameNumber;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
+use App\Modules\Shared\Application\Actions\RecordOutboxEventAction;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -65,6 +66,8 @@ use LogicException;
  */
 final class RefundOrderAction
 {
+    public function __construct(private readonly RecordOutboxEventAction $recordOutbox) {}
+
     /** @var list<GameStatus> */
     private const ALLOWED_GAME_STATUSES = [
         GameStatus::SalesOpen,
@@ -290,6 +293,22 @@ final class RefundOrderAction
             'actor_user_id' => $data->actorUserId,
             'occurred_at' => $processedAt,
         ]);
+
+        $this->recordOutbox->execute(
+            eventType: 'order_refunded',
+            aggregateType: 'order',
+            payload: [
+                'schema_version' => 1,
+                'refund_id' => $refund->id,
+                'order_id' => $order->id,
+                'payment_id' => $payment->id,
+                'game_id' => $order->game_id,
+                'buyer_user_id' => $order->user_id,
+                'occurred_at' => $processedAt->toIso8601String(),
+            ],
+            aggregateId: $order->id,
+            deduplicationKey: 'order_refunded:'.$order->id,
+        );
 
         return new RefundOrderResult(
             refundId: $refund->id,

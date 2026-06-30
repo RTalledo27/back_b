@@ -7,6 +7,7 @@ namespace Tests\Unit\Game;
 use App\Modules\RepeatNumberBingo\Application\Actions\DrawGameNumberAction;
 use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
 use App\Modules\RepeatNumberBingo\Application\Services\CommittedDrawEventsDispatcher;
+use App\Modules\Shared\Application\Actions\RecordOutboxEventAction;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -23,9 +24,10 @@ final class DrawGameNumberActionArchitectureTest extends TestCase
         $ctor = $ref->getConstructor();
         $this->assertNotNull($ctor);
         $params = $ctor->getParameters();
-        $this->assertCount(2, $params);
+        $this->assertCount(3, $params);
         $this->assertSame(DrawNumberStrategy::class, $params[0]->getType()?->getName());
         $this->assertSame(CommittedDrawEventsDispatcher::class, $params[1]->getType()?->getName());
+        $this->assertSame(RecordOutboxEventAction::class, $params[2]->getType()?->getName());
     }
 
     public function test_within_transaction_method_guards_zero_level(): void

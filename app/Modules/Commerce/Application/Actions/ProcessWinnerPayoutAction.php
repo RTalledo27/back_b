@@ -16,6 +16,7 @@ use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
+use App\Modules\Shared\Application\Actions\RecordOutboxEventAction;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 
@@ -46,6 +47,8 @@ use LogicException;
  */
 final class ProcessWinnerPayoutAction
 {
+    public function __construct(private readonly RecordOutboxEventAction $recordOutbox) {}
+
     public function execute(ProcessWinnerPayoutData $data): ProcessWinnerPayoutResult
     {
         $result = DB::transaction(
@@ -157,6 +160,22 @@ final class ProcessWinnerPayoutAction
             'actor_user_id' => $data->actorUserId,
             'occurred_at' => $processedAt,
         ]);
+
+        // Step 8: Outbox — durable at-least-once delivery of WinnerPayoutRegistered.
+        $this->recordOutbox->execute(
+            eventType: 'winner_payout_registered',
+            aggregateType: 'game_winner',
+            payload: [
+                'schema_version' => 1,
+                'winner_payout_id' => $payout->id,
+                'game_winner_id' => (string) $winner->id,
+                'game_id' => (string) $game->id,
+                'winner_user_id' => (int) $winner->user_id,
+                'occurred_at' => $processedAt->toIso8601String(),
+            ],
+            aggregateId: (string) $winner->id,
+            deduplicationKey: 'winner_payout_registered:'.(string) $winner->id,
+        );
 
         return new ProcessWinnerPayoutResult(
             payoutId: $payout->id,
