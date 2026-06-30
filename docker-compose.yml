@@ -1,6 +1,23 @@
 name: backend_rifas_app
 
 services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: rifas_app
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: php artisan serve --host=0.0.0.0 --port=8000
+
   postgres:
     image: postgres:16-alpine
     container_name: rifas_postgres
