@@ -16,7 +16,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: php artisan serve --host=0.0.0.0 --port=8000
+    command: sh -lc "php artisan optimize && php artisan serve --host=0.0.0.0 --port=8000"
 
   postgres:
     image: postgres:16-alpine
@@ -52,6 +52,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: rifas_mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+      - "1025:1025"
 
 volumes:
   rifas_postgres_data:
