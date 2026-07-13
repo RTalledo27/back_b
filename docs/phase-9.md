@@ -833,3 +833,71 @@ Lo siguiente **no se implementa** en Fase 9.x y requiere aprobación antes de in
 | `onOneServer()` en el scheduler | Requiere Redis compartido — postergado |
 | phpredis instalado en imagen Docker | No necesario para 9.2 |
 | Notificación de invitación de jugador | Requiere definición de canal separada |
+
+---
+
+## 15. Fase 9.2 — Implementación completada
+
+### 15.1 Artefactos creados
+
+| Artefacto | Ruta |
+|-----------|------|
+| Migración `notification_deliveries` | `database/migrations/2026_07_01_001719_create_notification_deliveries_table.php` |
+| Modelo `NotificationDelivery` | `app/Models/NotificationDelivery.php` |
+| Handler `PaymentApproved` | `app/Modules/Shared/Infrastructure/Outbox/Handlers/PaymentApprovedNotificationHandler.php` |
+| Handler `PaymentRejected` | `app/Modules/Shared/Infrastructure/Outbox/Handlers/PaymentRejectedNotificationHandler.php` |
+| Handler `OrderRefunded` | `app/Modules/Shared/Infrastructure/Outbox/Handlers/OrderRefundedNotificationHandler.php` |
+| Handler `WinnerPayoutRegistered` | `app/Modules/Shared/Infrastructure/Outbox/Handlers/WinnerPayoutRegisteredNotificationHandler.php` |
+| Handler `GameWinnerDeclared` | `app/Modules/Shared/Infrastructure/Outbox/Handlers/GameWinnerDeclaredNotificationHandler.php` |
+| Notification `PaymentApproved` | `app/Notifications/Domain/PaymentApprovedNotification.php` |
+| Notification `PaymentRejected` | `app/Notifications/Domain/PaymentRejectedNotification.php` |
+| Notification `OrderRefunded` | `app/Notifications/Domain/OrderRefundedNotification.php` |
+| Notification `WinnerPayoutRegistered` | `app/Notifications/Domain/WinnerPayoutRegisteredNotification.php` |
+| Notification `GameWinnerDeclared` | `app/Notifications/Domain/GameWinnerDeclaredNotification.php` |
+| `OutboxEventDispatcher` (refactorizado) | `app/Modules/Shared/Infrastructure/Outbox/OutboxEventDispatcher.php` |
+| `VerifyEmailNotification` (actualizado) | `app/Notifications/Auth/VerifyEmailNotification.php` |
+| Mailpit en Docker | `docker-compose.yml` |
+| Tests de constraints | `tests/Integration/Shared/NotificationDeliveriesConstraintsTest.php` |
+| Tests de handlers (5 archivos) | `tests/Integration/Shared/Handlers/` |
+| Guard de arquitectura | `tests/Unit/Architecture/Phase92NotificationArchitectureTest.php` |
+
+### 15.2 Decisión de diseño: `claimForHandler()`
+
+El diseño original del handler usaba `claim()` seguido de `isPendingFresh()`. Sin embargo, `claim()` setea `updated_at = now()` en el INSERT, lo que hace que `isPendingFresh()` devuelva `true` inmediatamente — bloqueando la primera ejecución legítima.
+
+**Solución**: se agregó `claimForHandler()` que retorna `[NotificationDelivery, bool $wasJustCreated]`. El flag `$wasJustCreated` se determina comparando `$delivery->id === $id` (el UUID generado antes del INSERT). Si coincide, el INSERT fue exitoso; si difiere, la fila ya existía.
+
+Flujo corregido en los 5 handlers:
+
+```php
+[$delivery, $wasJustCreated] = NotificationDelivery::claimForHandler(...);
+
+if ($delivery->isFinalOrQueued()) {
+    return;
+}
+
+// isPendingFresh() solo aplica en reintentos (zona ambigua), no en la primera ejecución.
+if (! $wasJustCreated && $delivery->isPendingFresh()) {
+    return;
+}
+```
+
+El método `claim()` (usado en tests) sigue retornando `self` sin cambios en su API pública.
+
+### 15.3 Actualización de tests de Fase 8
+
+Los tests `OutboxDispatcherPhase83Test` y `Phase84OutboxFinalAuditTest` verificaban la existencia de 5 métodos privados `handleXxx(OutboxEvent $event)` dentro del dispatcher. En Fase 9.2, el dispatcher usa inyección de constructor con 5 handler classes separadas.
+
+Ambos tests fueron actualizados para:
+- Verificar la existencia de 5 propiedades `private readonly XxxNotificationHandler` en el constructor.
+- Permitir `RuntimeException` de validación de payload en `test_dispatcher_accepts_allowed_event_type` (los handlers reales validan IDs de usuario, que no están presentes en payloads de test vacíos).
+
+### 15.4 Resultados de tests
+
+| Suite | Tests | Estado |
+|-------|-------|--------|
+| `NotificationDeliveriesConstraintsTest` | 24 | ✓ todos pasan |
+| Handlers (5 archivos, 23 tests) | 23 | ✓ todos pasan |
+| `Phase92NotificationArchitectureTest` | 11 | ✓ todos pasan |
+| `Integration/Shared` + `Unit/Architecture` | 142 | ✓ todos pasan |
+| Suite completa | 1345 tests / 6396 assertions | ✓ 0 failures en verificación final |

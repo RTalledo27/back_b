@@ -59,8 +59,17 @@ final class OutboxDispatcherPhase83Test extends TestCase
     {
         $event = $this->insertEvent($eventType);
 
-        // No exception means the dispatcher handled the type correctly.
-        $this->dispatcher()->dispatch($event);
+        try {
+            // Phase 9.2: real handlers may throw RuntimeException for invalid test payloads
+            // (e.g. missing user_id). The guard is that it must NOT throw "unknown event_type".
+            $this->dispatcher()->dispatch($event);
+        } catch (RuntimeException $e) {
+            $this->assertStringNotContainsString(
+                'unknown event_type',
+                $e->getMessage(),
+                "Dispatcher threw 'unknown event_type' for '{$eventType}', which must be handled."
+            );
+        }
 
         $this->assertTrue(true);
     }
@@ -115,8 +124,9 @@ final class OutboxDispatcherPhase83Test extends TestCase
             );
         }
 
-        // Guard that exactly 5 private handler methods exist (one per event type).
-        $handlerCount = preg_match_all('/private function handle\w+\(OutboxEvent/', $dispatcherFile, $matches);
-        $this->assertSame(5, $handlerCount, 'Dispatcher must have exactly 5 handler methods (Phase 8.3).');
+        // Phase 9.2: handlers are injected via constructor, not private methods.
+        // Guard that exactly 5 NotificationHandler constructor properties exist.
+        $handlerCount = preg_match_all('/private readonly \w+NotificationHandler/', $dispatcherFile, $matches);
+        $this->assertSame(5, $handlerCount, 'Dispatcher must inject exactly 5 NotificationHandler properties (Phase 9.2).');
     }
 }

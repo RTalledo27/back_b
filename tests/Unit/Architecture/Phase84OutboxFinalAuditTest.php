@@ -370,13 +370,14 @@ final class Phase84OutboxFinalAuditTest extends TestCase
         $this->assertTrue(true, 'No Controller calls RecordOutboxEventAction directly.');
     }
 
-    // ── 13. Dispatcher has exactly 5 handler methods ─────────────────────────
+    // ── 13. Dispatcher has exactly 5 handler dependencies ────────────────────
 
     public function test_dispatcher_has_exactly_five_handler_methods(): void
     {
         $content = $this->read(self::DISPATCHER);
 
-        $count = preg_match_all('/private function handle\w+\(OutboxEvent/', $content, $matches);
+        // Phase 9.2: handlers are injected as constructor properties, not private methods.
+        $count = preg_match_all('/private readonly \w+NotificationHandler/', $content, $matches);
 
         $this->assertSame(
             count(self::ALLOWED_EVENT_TYPES),

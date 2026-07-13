@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Notifications\Auth;
 
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\URL;
 
-final class VerifyEmailNotification extends Notification
+final class VerifyEmailNotification extends Notification implements ShouldQueue
 {
+    use Queueable;
+
     /**
      * @return list<string>
      */
