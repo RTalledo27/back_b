@@ -11,12 +11,14 @@ services:
       - .:/var/www/html
     ports:
       - "8000:8000"
+    environment:
+      PHP_CLI_SERVER_WORKERS: ${PHP_CLI_SERVER_WORKERS:-4}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: sh -lc "php artisan optimize && php artisan serve --host=0.0.0.0 --port=8000"
+    command: sh -lc "php artisan optimize && php artisan serve --host=0.0.0.0 --port=8000 --no-reload"
 
   postgres:
     image: postgres:16-alpine
