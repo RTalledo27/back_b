@@ -1,0 +1,61 @@
+FROM php:8.3-fpm-alpine
+
+WORKDIR /var/www/html
+
+RUN apk add --no-cache \
+    fcgi \
+    freetype \
+    icu-libs \
+    libjpeg-turbo \
+    libpng \
+    libpq \
+    libzip \
+    oniguruma \
+    unzip && \
+    apk add --no-cache --virtual .build-deps \
+    $PHPIZE_DEPS \
+    freetype-dev \
+    icu-dev \
+    libjpeg-turbo-dev \
+    libpng-dev \
+    libzip-dev \
+    oniguruma-dev \
+    postgresql-dev && \
+    docker-php-ext-configure gd --with-freetype --with-jpeg && \
+    docker-php-ext-install -j"$(nproc)" pdo pdo_pgsql intl mbstring zip gd opcache && \
+    pecl install redis && \
+    docker-php-ext-enable redis && \
+    apk del .build-deps
+
+RUN { \
+    echo 'opcache.enable=1'; \
+    echo 'opcache.enable_cli=1'; \
+    echo 'opcache.validate_timestamps=0'; \
+    echo 'opcache.memory_consumption=192'; \
+    echo 'opcache.interned_strings_buffer=16'; \
+    echo 'opcache.max_accelerated_files=20000'; \
+} > /usr/local/etc/php/conf.d/zz-opcache-release.ini
+
+COPY docker/php/zz-release-pool.conf /usr/local/etc/php-fpm.d/zz-release-pool.conf
+
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY composer.json composer.lock ./
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --no-progress \
+    --no-scripts \
+    --prefer-dist
+
+COPY . .
+RUN composer dump-autoload --no-dev --classmap-authoritative --no-interaction --no-scripts && \
+    mkdir -p storage/framework/cache storage/framework/sessions storage/framework/views storage/logs bootstrap/cache && \
+    chown -R www-data:www-data storage bootstrap/cache
+
+COPY docker/php/start-release.sh /usr/local/bin/start-release
+COPY docker/php/guard-release-database.sh /usr/local/bin/guard-release-database
+RUN chmod +x /usr/local/bin/start-release /usr/local/bin/guard-release-database
+
+USER www-data
+ENTRYPOINT ["/usr/local/bin/guard-release-database"]
+CMD ["/usr/local/bin/start-release"]

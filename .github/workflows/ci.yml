@@ -1,0 +1,108 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: backend_rifas_app_test
+          POSTGRES_USER: rifas
+          POSTGRES_PASSWORD: testing-secret
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rifas -d backend_rifas_app_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: backend_rifas_app_test
+      DB_USERNAME: rifas
+      DB_PASSWORD: testing-secret
+      CACHE_STORE: redis
+      SESSION_DRIVER: database
+      QUEUE_CONNECTION: database
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      MAIL_MAILER: array
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: "8.3"
+          extensions: mbstring, intl, pdo_pgsql, redis
+          coverage: none
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare application
+        run: |
+          cp .env.example .env
+          APP_KEY="$(php artisan key:generate --show)"
+          export APP_KEY
+          echo "APP_KEY=$APP_KEY" >> "$GITHUB_ENV"
+          php artisan migrate --force
+      - run: php artisan test
+      - run: vendor/bin/pint --test
+
+  release-runtime-smoke:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: rifas_b181_release
+      DB_DATABASE: backend_rifas_app_b181_release_test
+      DB_USERNAME: rifas_b181_release
+      RELEASE_HTTP_PORT: 18081
+      RELEASE_APP_URL: http://127.0.0.1:18081
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare ephemeral runtime credentials
+        run: |
+          APP_KEY="base64:$(openssl rand -base64 32)"
+          DB_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$APP_KEY"
+          echo "::add-mask::$DB_PASSWORD"
+          echo "APP_KEY=$APP_KEY" >> "$GITHUB_ENV"
+          echo "DB_PASSWORD=$DB_PASSWORD" >> "$GITHUB_ENV"
+      - name: Build and start release runtime
+        run: docker compose -p rifas_b181_release -f docker-compose.release.yml up -d --build --wait
+      - name: Verify readiness
+        run: |
+          curl --fail --retry 12 --retry-delay 5 --retry-all-errors http://127.0.0.1:18081/up
+          curl --fail http://127.0.0.1:18081/api/v1/public/games
+          docker compose -p rifas_b181_release -f docker-compose.release.yml ps
+      - name: Release logs
+        if: failure()
+        run: docker compose -p rifas_b181_release -f docker-compose.release.yml logs --no-color
+      - name: Stop release runtime
+        if: always()
+        run: docker compose -p rifas_b181_release -f docker-compose.release.yml down
