@@ -32,7 +32,7 @@ final class IdempotencyClaimConcurrencyTest extends TestCase
         // automatic DatabaseTruncation pass misses them. Wipe the tables we
         // know are touched (directly or via FKs) before the trait runs.
         DB::statement(
-            'TRUNCATE TABLE idempotency_keys, users RESTART IDENTITY CASCADE'
+            'TRUNCATE TABLE notification_deliveries, outbox_events, idempotency_keys, users RESTART IDENTITY CASCADE'
         );
 
         parent::tearDown();

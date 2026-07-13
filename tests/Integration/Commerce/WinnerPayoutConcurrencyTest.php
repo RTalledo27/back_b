@@ -41,7 +41,7 @@ final class WinnerPayoutConcurrencyTest extends TestCase
 
     protected function tearDown(): void
     {
-        DB::statement('TRUNCATE TABLE winner_payout_documents, winner_payouts, game_events, game_entries, game_numbers, draw_commands, game_winners, game_draws, game_number_counters, games, users RESTART IDENTITY CASCADE');
+        DB::statement('TRUNCATE TABLE notification_deliveries, outbox_events, winner_payout_documents, winner_payouts, game_events, game_entries, game_numbers, draw_commands, game_winners, game_draws, game_number_counters, games, users RESTART IDENTITY CASCADE');
         parent::tearDown();
     }
 

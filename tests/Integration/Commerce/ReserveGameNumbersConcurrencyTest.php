@@ -36,7 +36,7 @@ final class ReserveGameNumbersConcurrencyTest extends TestCase
         // truncate guarantees no row survives into LazilyRefreshDatabase
         // tests that follow alphabetically.
         \DB::statement(
-            'TRUNCATE TABLE games, game_numbers, game_events, orders, '
+            'TRUNCATE TABLE notification_deliveries, outbox_events, games, game_numbers, game_events, orders, '
             .'order_items, number_reservations, payments, payment_documents, '
             .'game_entries, purchase_allocations, idempotency_keys, users '
             .'RESTART IDENTITY CASCADE'
