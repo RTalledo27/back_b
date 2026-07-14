@@ -80,12 +80,8 @@ final class Phase102PaymentGatewayFoundationTest extends TestCase
         self::assertDoesNotMatchRegularExpression('/(?:sk_live_|pk_live_|culqi|niubiz|stripe)/i', $envExample);
     }
 
-    public function test_no_gateway_migrations_or_new_outbox_event_types_exist(): void
+    public function test_no_new_outbox_event_types_exist(): void
     {
-        foreach ($this->phpFiles($this->rootPath('database/migrations')) as $file) {
-            self::assertDoesNotMatchRegularExpression('/payment_gateway_(?:attempts|transactions|webhooks)/i', $this->read($file), $file);
-        }
-
         $dispatcher = $this->read(
             $this->rootPath('app/Modules/Shared/Infrastructure/Outbox/OutboxEventDispatcher.php'),
         );

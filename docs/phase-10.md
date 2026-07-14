@@ -183,9 +183,10 @@ El adaptador futuro debería:
 9. registrar el resultado de procesamiento y permitir una reconciliación
    posterior.
 
-El endpoint, las tablas de webhook, la política de replay y la política de
-respuestas HTTP requieren una fase posterior aprobada. Este documento no los
-crea.
+El endpoint, la política de replay operativo, el procesamiento comercial y la
+política de respuestas HTTP requieren una fase posterior aprobada. Las tablas
+internas del ledger se crean en la Fase 10.3, pero no existe endpoint público
+ni procesamiento externo.
 
 ## 9. Seguridad y datos sensibles
 
@@ -274,9 +275,11 @@ La configuración segura está en `config/payment_gateways.php` y usa:
 * `PAYMENT_GATEWAY_SECRET_KEY=`;
 * `PAYMENT_GATEWAY_WEBHOOK_SECRET=`.
 
-No se crearon migraciones ni tablas `payment_gateway_attempts`,
-`payment_gateway_transactions` o `payment_gateway_webhooks`. La foundation se
-mantiene en contratos y memoria de prueba para no alterar el flujo manual.
+En el bloque 10.2 no se crearon migraciones ni tablas
+`payment_gateway_attempts`, `payment_gateway_transactions` o
+`payment_gateway_webhooks`. Esa foundation se mantuvo en contratos y memoria
+de prueba para no alterar el flujo manual; el ledger persistente se implementa
+únicamente en la sección 10.3.
 
 La idempotencia se expresa con `idempotencyKeyHash` y `requestFingerprint`.
 Una repetición idéntica devuelve el resultado anterior; una huella diferente
@@ -294,9 +297,50 @@ estados terminales, firma válida e inválida, expiración de firma, webhook
 duplicado, ausencia de HTTP externo, ausencia de rutas públicas y preservación
 del flujo manual. No se modificaron Actions de Commerce ni tipos Outbox.
 
+## Fase 10.3 — Gateway persistence ledger
+
+Este bloque agrega únicamente un ledger interno de persistencia para preparar
+una futura integración, sin seleccionar ni conectar un proveedor real. Las
+tres tablas PostgreSQL son:
+
+* `payment_gateway_attempts`: intento asociado a `Order` y `Payment`, con
+  proveedor, entorno, hashes de idempotencia y fingerprint, estado, monto,
+  moneda y referencias mínimas de checkout;
+* `payment_gateway_transactions`: transacción del proveedor asociada al
+  intento y al `Payment`, con estado, monto, moneda, fechas técnicas y solo un
+  hash de referencia cruda;
+* `payment_gateway_webhooks`: identificador del evento, tipo, verificación de
+  firma, hash del payload y resultado temporal de procesamiento.
+
+Los modelos internos son `PaymentGatewayAttempt`,
+`PaymentGatewayTransaction` y `PaymentGatewayWebhook`. Sus identificadores son
+UUID v7 generados por PHP; PostgreSQL no genera UUID ni recibe el payload
+completo. Las constraints únicas protegen, respectivamente,
+`(provider, idempotency_key_hash)`, `(provider, provider_transaction_id)` y
+`(provider, provider_event_id)`.
+
+`RecordPaymentGatewayAttemptAction`,
+`RecordPaymentGatewayTransactionAction` y
+`RecordPaymentGatewayWebhookAction` controlan sus propias transacciones. Una
+repetición idéntica devuelve el registro existente. Una misma clave o
+identificador con fingerprint, referencias o datos inmutables diferentes
+produce `PaymentGatewayException::idempotencyConflict()`. El patrón
+`insertOrIgnore` más `lockForUpdate` permite replays seguros bajo concurrencia.
+
+El ledger no modifica `Payment`, `Order` ni sus estados, no llama a ningún
+proveedor, no realiza HTTP, no registra Outbox y no crea endpoints públicos.
+El `FakePaymentGatewayProvider` continúa siendo suficiente para las pruebas de
+foundation y ledger. No se almacenan números de tarjeta, CVV, secretos,
+credenciales, tokens ni payloads completos. La deduplicación es idempotencia
+de mejor esfuerzo respaldada por PostgreSQL. No se afirma exactly-once.
+
+La siguiente etapa, sujeta a aprobación, podrá definir una integración real,
+pero deberá conservar este ledger como registro técnico y mantener el flujo
+manual durante la transición.
+
 ## 14. Próxima fase y límites
 
-La Fase 10.3, sujeta a aprobación, podrá seleccionar un proveedor, definir el
+La Fase 10.4, sujeta a aprobación, podrá seleccionar un proveedor, definir el
 adaptador concreto, crear persistencia de intentos y webhooks si resulta
 necesario, integrar checkout, confirmación, captura, reembolso y
 reconciliación, y establecer operación de sandbox y producción.
