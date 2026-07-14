@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\Integration\Shared;
 
+use App\Modules\Shared\Infrastructure\Outbox\OutboxEventDeferred;
 use App\Modules\Shared\Infrastructure\Outbox\OutboxEventDispatcher;
 use App\Modules\Shared\Infrastructure\Outbox\OutboxEventProcessor;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -122,6 +124,27 @@ final class OutboxEventProcessorTest extends TestCase
         $this->assertNull($row->failed_at);
         $this->assertSame(1, (int) $row->attempts);
         $this->assertNotNull($row->next_attempt_at);
+    }
+
+    public function test_defers_event_without_marking_it_processed_or_consuming_an_attempt(): void
+    {
+        $id = $this->insertPendingEvent(['max_attempts' => 5]);
+
+        $dispatcher = $this->createMock(OutboxEventDispatcher::class);
+        $dispatcher->method('dispatch')->willThrowException(OutboxEventDeferred::forSeconds(300));
+
+        $result = $this->makeProcessor($dispatcher)->processBatch(batchSize: 10);
+
+        $this->assertSame(['claimed' => 1, 'processed' => 0, 'failed' => 1], $result);
+
+        $row = DB::table('outbox_events')->where('id', $id)->first();
+        $this->assertNull($row->processed_at);
+        $this->assertNull($row->failed_at);
+        $this->assertNull($row->locked_at);
+        $this->assertNull($row->locked_by);
+        $this->assertSame(0, (int) $row->attempts);
+        $this->assertNotNull($row->next_attempt_at);
+        $this->assertTrue(now()->addSeconds(290)->lte(Carbon::parse($row->next_attempt_at)));
     }
 
     public function test_marks_failed_at_on_final_attempt(): void

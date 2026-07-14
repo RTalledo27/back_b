@@ -7,6 +7,7 @@ namespace App\Modules\Shared\Infrastructure\Outbox\Handlers;
 use App\Models\NotificationDelivery;
 use App\Models\User;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
+use App\Modules\Shared\Infrastructure\Outbox\OutboxEventDeferred;
 use App\Notifications\Domain\GameWinnerDeclaredNotification;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -31,7 +32,7 @@ final class GameWinnerDeclaredNotificationHandler
         }
 
         if (! $wasJustCreated && $delivery->isPendingFresh()) {
-            return;
+            throw OutboxEventDeferred::forSeconds(NotificationDelivery::PENDING_FRESH_SECONDS);
         }
 
         $user = User::find($winnerUserId);

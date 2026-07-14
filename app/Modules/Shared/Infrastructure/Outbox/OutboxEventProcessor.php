@@ -132,6 +132,16 @@ final class OutboxEventProcessor
                 ]);
 
             return true;
+        } catch (OutboxEventDeferred $e) {
+            DB::table('outbox_events')
+                ->where('id', $event->id)
+                ->update([
+                    'next_attempt_at' => now()->addSeconds($e->retryAfterSeconds),
+                    'locked_at' => null,
+                    'locked_by' => null,
+                ]);
+
+            return false;
         } catch (Throwable $e) {
             $newAttempts = $event->attempts + 1;
             $isFinal = $newAttempts >= $event->max_attempts;

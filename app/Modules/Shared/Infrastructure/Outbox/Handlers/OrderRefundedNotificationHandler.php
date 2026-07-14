@@ -8,6 +8,7 @@ use App\Models\NotificationDelivery;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Models\Order;
 use App\Modules\Commerce\Domain\Models\Refund;
+use App\Modules\Shared\Infrastructure\Outbox\OutboxEventDeferred;
 use App\Notifications\Domain\OrderRefundedNotification;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -32,7 +33,7 @@ final class OrderRefundedNotificationHandler
         }
 
         if (! $wasJustCreated && $delivery->isPendingFresh()) {
-            return;
+            throw OutboxEventDeferred::forSeconds(NotificationDelivery::PENDING_FRESH_SECONDS);
         }
 
         $user = User::find($buyerUserId);

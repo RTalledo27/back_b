@@ -114,6 +114,19 @@ final class Phase94NotificationClosureTest extends TestCase
         $this->assertSame(['mail'], $authNotification->via(null));
     }
 
+    public function test_all_handlers_defer_fresh_pending_deliveries_instead_of_acknowledging_them(): void
+    {
+        foreach ($this->phpFiles(self::HANDLERS) as $file) {
+            $content = $this->read($file);
+
+            $this->assertStringContainsString(
+                'throw OutboxEventDeferred::forSeconds(NotificationDelivery::PENDING_FRESH_SECONDS);',
+                $content,
+                "Handler {$file} must preserve a fresh pending delivery as a retryable outbox event.",
+            );
+        }
+    }
+
     public function test_dispatcher_exposes_only_the_five_approved_event_types(): void
     {
         $dispatcherFile = __DIR__.'/../../../app/Modules/Shared/Infrastructure/Outbox/OutboxEventDispatcher.php';

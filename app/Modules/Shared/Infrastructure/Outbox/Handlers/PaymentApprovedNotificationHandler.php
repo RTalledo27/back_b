@@ -8,6 +8,7 @@ use App\Models\NotificationDelivery;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Enums\PaymentStatus;
 use App\Modules\Commerce\Domain\Models\Payment;
+use App\Modules\Shared\Infrastructure\Outbox\OutboxEventDeferred;
 use App\Notifications\Domain\PaymentApprovedNotification;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -32,7 +33,7 @@ final class PaymentApprovedNotificationHandler
         }
 
         if (! $wasJustCreated && $delivery->isPendingFresh()) {
-            return;
+            throw OutboxEventDeferred::forSeconds(NotificationDelivery::PENDING_FRESH_SECONDS);
         }
 
         $user = User::find($buyerUserId);

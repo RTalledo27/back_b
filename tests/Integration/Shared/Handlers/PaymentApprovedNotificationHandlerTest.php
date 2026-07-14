@@ -13,6 +13,7 @@ use App\Modules\Commerce\Domain\Models\Payment;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\Shared\Infrastructure\Outbox\Handlers\PaymentApprovedNotificationHandler;
+use App\Modules\Shared\Infrastructure\Outbox\OutboxEventDeferred;
 use App\Notifications\Domain\PaymentApprovedNotification;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Notification;
@@ -107,7 +108,7 @@ final class PaymentApprovedNotificationHandlerTest extends TestCase
         Notification::assertNothingSent();
     }
 
-    public function test_does_not_send_if_pending_fresh(): void
+    public function test_defers_outbox_event_if_pending_fresh_without_sending_again(): void
     {
         Notification::fake();
 
@@ -116,7 +117,12 @@ final class PaymentApprovedNotificationHandlerTest extends TestCase
 
         NotificationDelivery::claim($outboxEventId, 'payment_approved', $buyer->id, 'mail');
 
-        $this->makeHandler()->handle($outboxEventId, $this->makePayload($buyer, $payment, $order, $game));
+        try {
+            $this->makeHandler()->handle($outboxEventId, $this->makePayload($buyer, $payment, $order, $game));
+            $this->fail('A fresh pending delivery must defer the outbox event.');
+        } catch (OutboxEventDeferred $exception) {
+            $this->assertSame(NotificationDelivery::PENDING_FRESH_SECONDS, $exception->retryAfterSeconds);
+        }
 
         Notification::assertNothingSent();
     }

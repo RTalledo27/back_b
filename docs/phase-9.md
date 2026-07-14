@@ -168,10 +168,10 @@ final class PaymentApprovedNotificationHandler
             return;
         }
 
-        // 4. Si está pending reciente → no reintentar todavía
-        //    Previene el doble-notify en retry inmediato post-caída
+        // 4. Si está pending reciente → diferir el evento Outbox
+        //    sin marcarlo procesado ni consumir un intento
         if ($delivery->isPendingFresh()) {
-            return;
+            throw OutboxEventDeferred::forSeconds(NotificationDelivery::PENDING_FRESH_SECONDS);
         }
 
         // 5. Lookup de User (si falla, la fila queda pending; Outbox reintentará con backoff)
@@ -315,7 +315,7 @@ Un registro en `pending` significa que el claim fue exitoso pero aún no se sabe
 | Condición | Decisión del handler | Justificación |
 |-----------|---------------------|---------------|
 | `status=queued` o `status=sent` | `isFinalOrQueued()=true` → return sin notify | El job fue encolado o la entrega fue confirmada |
-| `status=pending` y `updated_at >= now() - 5 min` | `isPendingFresh()=true` → return sin notify | Posible zona ambigua: el job pudo haberse encolado justo antes de la caída |
+| `status=pending` y `updated_at >= now() - 5 min` | `isPendingFresh()=true` → difiere el Outbox sin notify ni consumo de intento | Posible zona ambigua: el job pudo haberse encolado justo antes de la caída; el evento no debe marcarse procesado |
 | `status=pending` y `updated_at < now() - 5 min` | `isRetryablePending()=true` → puede reintentar | El tiempo transcurrido sugiere que el job nunca llegó a la cola |
 | `status=failed` y `attempts < max_attempts` | `isRetryableFailed()=true` → puede reintentar | Fallo conocido con intentos disponibles |
 | `status=failed` y `attempts >= max_attempts` | `isFinalOrQueued()=false`, `isRetryableFailed()=false` → descarta | Agotado; alertar operacionalmente |
@@ -680,7 +680,9 @@ Cada test debe cubrir:
 - Handler envía `Notification::fake()` al destinatario correcto.
 - Handler no llama a `notify()` si `notification_deliveries` ya tiene status=`queued` (`isFinalOrQueued()=true`).
 - Handler no llama a `notify()` si `notification_deliveries` ya tiene status=`sent` (`isFinalOrQueued()=true`).
-- Handler no llama a `notify()` si `pending` es reciente (`isPendingFresh()=true`) — simular caída post-notify.
+- Handler no llama a `notify()` si `pending` es reciente (`isPendingFresh()=true`) y lanza `OutboxEventDeferred` para conservar el evento reintentable.
+- Processor limpia el lease, programa `next_attempt_at` y no incrementa `attempts` al recibir `OutboxEventDeferred`.
+- Dos conexiones PostgreSQL compiten por el mismo claim y el índice `UNIQUE(deduplication_key)` permite persistir una sola entrega.
 - Handler puede reintentar si `pending` está vencido (`isRetryablePending()=true`).
 - Cuando `notify()` con `ShouldQueue` es llamado, `queued_at` se actualiza y status pasa a `queued`.
 - Handler descarta correctamente si el modelo de dominio está en estado incompatible (status → `failed`, no exception).
@@ -780,7 +782,7 @@ Cada handler sigue el flujo claim-first de §5.3:
 1. Extrae IDs del payload.
 2. Llama `NotificationDelivery::claim()` — INSERT ... ON CONFLICT DO NOTHING.
 3. Si `isFinalOrQueued()` → return (no reenviar).
-4. Si `isPendingFresh()` → return (zona ambigua: evitar retry inmediato).
+4. Si `isPendingFresh()` → lanza `OutboxEventDeferred` (zona ambigua: evitar retry inmediato sin perder el evento).
 5. Hace lookup de `User` — si null, lanza excepción para reintento con backoff.
 6. Valida estado del modelo de dominio — si incompatible, `markFailed()` + return sin excepción.
 7. `$user->notify(new DomainXxxNotification(...))`.
@@ -880,11 +882,12 @@ if ($delivery->isFinalOrQueued()) {
 
 // isPendingFresh() solo aplica en reintentos (zona ambigua), no en la primera ejecución.
 if (! $wasJustCreated && $delivery->isPendingFresh()) {
-    return;
+    throw OutboxEventDeferred::forSeconds(NotificationDelivery::PENDING_FRESH_SECONDS);
 }
 ```
 
 El método `claim()` (usado en tests) sigue retornando `self` sin cambios en su API pública.
+El processor captura `OutboxEventDeferred`, libera `locked_at`/`locked_by`, agenda `next_attempt_at` y conserva `attempts`, `processed_at` y `failed_at` sin cambios. Así se evita tanto el retry inmediato ambiguo como la pérdida silenciosa del evento.
 
 ### 15.3 Actualización de tests de Fase 8
 
@@ -1016,7 +1019,7 @@ En producción, mantener un worker persistente mediante Supervisor o equivalente
 
 Producir un evento soportado, comprobar Outbox, verificar el procesamiento, revisar `notification_deliveries`, confirmar el correo en Mailpit y revisar `failed_jobs` ante errores. Usar `php artisan queue:failed` y `php artisan queue:retry all` según la política operativa.
 
-Los eventos desconocidos o payloads inválidos se marcan como fallidos y no se ocultan. Un `pending` reciente no se reenvía automáticamente; un `pending` vencido puede volver a procesarse. `queued_at` representa que `notify()` aceptó el trabajo en la cola; `sent_at` queda reservado para una confirmación efectiva del mailer si posteriormente se incorpora un listener `NotificationSent`.
+Los eventos desconocidos o payloads inválidos se marcan como fallidos y no se ocultan. Un `pending` reciente difiere el Outbox y no se marca procesado; cuando vence la ventana puede volver a procesarse. `queued_at` representa que `notify()` aceptó el trabajo en la cola; `sent_at` queda reservado para una confirmación efectiva del mailer si posteriormente se incorpora un listener `NotificationSent`.
 
 ### 17.6 Pendientes explícitos
 
