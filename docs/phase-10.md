@@ -2,8 +2,8 @@
 
 ## 1. Alcance de esta fase
 
-La Fase 10 comienza con una auditoría de contrato. El Bloque 10.1 documenta la
-integración futura entre Commerce y un proveedor externo de pagos, sin añadir
+La Fase 10 comienza con una auditoría de contrato. El Bloque 10.1 (Fase 10.1)
+documenta la integración futura entre Commerce y un proveedor externo de pagos, sin añadir
 un proveedor, endpoints, migraciones ni cambios en el flujo de negocio actual.
 
 Esta fase no implementa Culqi, Niubiz, Stripe ni otro gateway real. Tampoco
@@ -249,16 +249,60 @@ Antes de activar un proveedor deberán existir, como mínimo:
   conserva su deduplicación;
 * regresión completa de Commerce, Game, Auth y Architecture sin Redis externo.
 
-## 13. Próximo bloque y límites
+## Fase 10.2 — Foundation interna de gateway (Bloque 10.2)
 
-El Bloque 10.2, sujeto a aprobación independiente, puede seleccionar un
-proveedor y definir el adapter contract, configuración de sandbox, credenciales
-seguras, migraciones y entidades futuras, checkout, confirmación y webhooks.
-Debe incluir pruebas de integración con `Fake`, operación de reconciliación y
-un plan de rollback.
+Este bloque prepara una base interna y sustituible para una futura pasarela,
+sin conectar con un proveedor externo. Se crearon los contratos
+`PaymentGatewayProvider`, `PaymentGatewayProviderRegistry`,
+`PaymentGatewayTransactionStatus`, `PaymentGatewayCreateAttemptData`,
+`PaymentGatewayCreateAttemptResult`, `PaymentGatewayConfirmData`,
+`PaymentGatewayConfirmResult`, `PaymentGatewayWebhookPayload`,
+`PaymentGatewayWebhookNormalizer`, `PaymentGatewayWebhookVerifier` y
+`PaymentGatewayException`.
 
-La Fase 10.1 no implementa gateway real, webhook real, checkout, frontend,
-credenciales, nuevas tablas, nuevos eventos Outbox ni nuevas rutas HTTP. Las
-garantías actuales son las del flujo manual y sus transacciones, locks,
-constraints, idempotencia y Outbox. No se afirma ejecución exactly-once por
-parte del proveedor ni entrega garantizada de notificaciones externas.
+La única implementación disponible es `FakePaymentGatewayProvider`. Permite
+crear intentos, confirmar estados `authorized`, `paid`, `failed` y `expired`,
+simular fallos, repetir solicitudes y deduplicar eventos por proveedor e
+identificador de evento. No realiza llamadas HTTP ni depende de un SDK.
+
+La configuración segura está en `config/payment_gateways.php` y usa:
+
+* `PAYMENT_GATEWAY_PROVIDER=fake`;
+* `PAYMENT_GATEWAY_ENV=sandbox`;
+* `PAYMENT_GATEWAY_WEBHOOK_TOLERANCE_SECONDS=300`;
+* `PAYMENT_GATEWAY_PUBLIC_KEY=`;
+* `PAYMENT_GATEWAY_SECRET_KEY=`;
+* `PAYMENT_GATEWAY_WEBHOOK_SECRET=`.
+
+No se crearon migraciones ni tablas `payment_gateway_attempts`,
+`payment_gateway_transactions` o `payment_gateway_webhooks`. La foundation se
+mantiene en contratos y memoria de prueba para no alterar el flujo manual.
+
+La idempotencia se expresa con `idempotencyKeyHash` y `requestFingerprint`.
+Una repetición idéntica devuelve el resultado anterior; una huella diferente
+produce `PaymentGatewayException`. El diseño no persiste el token plano ni
+emite eventos Outbox nuevos.
+
+El parsing interno usa `FakePaymentGatewayWebhookNormalizer` y la firma de
+prueba usa `FakePaymentGatewayWebhookVerifier`, con formato temporal y
+tolerancia configurada. No existe endpoint público, controller productivo ni
+persistencia de payload completo. Un payload normalizado conserva únicamente
+referencias y datos mínimos de la transacción.
+
+Las pruebas de foundation cubren determinismo, replay, conflicto, fallos,
+estados terminales, firma válida e inválida, expiración de firma, webhook
+duplicado, ausencia de HTTP externo, ausencia de rutas públicas y preservación
+del flujo manual. No se modificaron Actions de Commerce ni tipos Outbox.
+
+## 14. Próxima fase y límites
+
+La Fase 10.3, sujeta a aprobación, podrá seleccionar un proveedor, definir el
+adaptador concreto, crear persistencia de intentos y webhooks si resulta
+necesario, integrar checkout, confirmación, captura, reembolso y
+reconciliación, y establecer operación de sandbox y producción.
+
+En Fase 10.2 no se implementan proveedor real, SDK real, HTTP externo, webhook
+productivo, checkout frontend, redirecciones, credenciales reales, captura,
+reembolso del proveedor, nuevas tablas, nuevos eventos Outbox ni cambios en el
+flujo manual. Las garantías continúan siendo las del contrato interno y del
+fake. No se afirma ejecución exactly-once ni entrega externa garantizada.

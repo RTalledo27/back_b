@@ -2,9 +2,12 @@
 
 namespace App\Providers;
 
+use App\Modules\Commerce\Application\Gateway\PaymentGatewayProvider;
+use App\Modules\Commerce\Application\Gateway\PaymentGatewayProviderRegistry;
 use App\Modules\Commerce\Domain\Models\Order;
 use App\Modules\Commerce\Domain\Models\Payment;
 use App\Modules\Commerce\Infrastructure\GameLifecycle\CommerceGameStartReadinessChecker;
+use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayProvider;
 use App\Modules\Commerce\Presentation\Http\Policies\OrderPolicy;
 use App\Modules\Commerce\Presentation\Http\Policies\PaymentPolicy;
 use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
@@ -19,6 +22,7 @@ use App\Services\Auth\SocialiteProviderAdapter;
 use App\Services\Auth\SocialProviderAdapter;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -36,6 +40,17 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(DrawNumberStrategy::class, CryptographicallySecureDrawNumberStrategy::class);
         $this->app->bind(GameStartReadinessChecker::class, CommerceGameStartReadinessChecker::class);
         $this->app->bind(PublicGameUpdatesPublisher::class, LaravelPublicGameUpdatesPublisher::class);
+        $this->app->singleton(PaymentGatewayProviderRegistry::class, function (): PaymentGatewayProviderRegistry {
+            return new PaymentGatewayProviderRegistry(
+                providers: [
+                    'fake' => new FakePaymentGatewayProvider,
+                ],
+                defaultProvider: (string) config('payment_gateways.provider', 'fake'),
+            );
+        });
+        $this->app->bind(PaymentGatewayProvider::class, function (Application $app): PaymentGatewayProvider {
+            return $app->make(PaymentGatewayProviderRegistry::class)->default();
+        });
         $this->app->singleton(EngineTickCommandIdGenerator::class, fn () => new EngineTickCommandIdGenerator(
             (string) config('engine.draw_command_namespace'),
         ));
