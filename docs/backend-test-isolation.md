@@ -127,6 +127,7 @@ El runner elimina únicamente una base que él mismo creó y cuyo nombre vuelve 
 
 ## Riesgos pendientes
 
+- La primera ejecución de este workflow en GitHub Actions sigue pendiente; la validación realizada en B21 cubre su sintaxis y semántica local, no sustituye esa ejecución remota.
 - Los tests que usan procesos reales siguen dependiendo de recursos suficientes de Docker y PostgreSQL.
 - Una terminación forzada del proceso host puede dejar una DB efímera. Debe listarse y eliminarse manualmente por nombre exacto validado.
 - La estrategia evita colisiones de base; no pretende resolver conflictos sobre archivos temporales que un test futuro pueda compartir fuera de PostgreSQL.
