@@ -1,0 +1,264 @@
+# Fase 10 — Integración de pagos externos
+
+## 1. Alcance de esta fase
+
+La Fase 10 comienza con una auditoría de contrato. El Bloque 10.1 documenta la
+integración futura entre Commerce y un proveedor externo de pagos, sin añadir
+un proveedor, endpoints, migraciones ni cambios en el flujo de negocio actual.
+
+Esta fase no implementa Culqi, Niubiz, Stripe ni otro gateway real. Tampoco
+implementa credenciales, checkout externo, redirecciones, webhooks, frontend,
+Outbox nuevo o cambios en Commerce, Game o Auth.
+
+## 2. Flujo vigente y fuente de verdad
+
+El flujo vigente es manual y conserva PostgreSQL como fuente de verdad:
+
+1. El jugador reserva números mediante `POST /api/v1/games/{game}/reservations`.
+2. El jugador adjunta evidencia mediante
+   `POST /api/v1/me/orders/{order}/payment-evidence`.
+3. `SubmitPaymentEvidenceAction` persiste la evidencia en `payment_documents`,
+   actualiza el pago y el pedido, y mantiene la operación idempotente.
+4. Un administrador consulta la evidencia y ejecuta
+   `POST /api/v1/admin/payments/{payment}/approve` o
+   `POST /api/v1/admin/payments/{payment}/reject`.
+5. La aprobación confirma las entradas y los números; el rechazo libera las
+   reservas según las reglas actuales.
+6. Un administrador puede solicitar el reembolso mediante
+   `POST /api/v1/admin/orders/{order}/refund`.
+
+`Payment` y `Order` son la fuente de verdad del estado comercial actual.
+`PaymentDocument` es la evidencia manual inmutable. `Refund` es el registro
+inmutable del reembolso. La disponibilidad, venta y asignación de números
+continúan siendo responsabilidad de las tablas operativas de Commerce.
+
+El pago de un ganador sigue siendo un registro administrativo manual mediante
+`ProcessWinnerPayoutAction`; no es una operación del gateway.
+
+## 3. Estados actuales
+
+### `PaymentStatus`
+
+Los valores actuales son:
+
+* `pending`: pago creado, todavía sin evidencia resuelta;
+* `under_review`: evidencia presentada y pendiente de revisión;
+* `approved`: pago aprobado y aplicado al pedido;
+* `rejected`: pago rechazado;
+* `cancelled`: pago cancelado por una regla vigente;
+* `refunded`: pago reembolsado.
+
+### `OrderStatus`
+
+Los valores actuales son:
+
+* `pending`: pedido abierto sin evidencia resuelta;
+* `payment_submitted`: evidencia presentada;
+* `paid`: pago aprobado y pedido confirmado;
+* `rejected`: evidencia rechazada;
+* `expired`: pedido vencido antes de ser resuelto;
+* `cancelled`: pedido cancelado;
+* `refunded`: pedido reembolsado.
+
+Las transiciones válidas permanecen definidas por `PaymentStatus` y
+`OrderStatus`. Este bloque no agrega valores a los enums existentes.
+
+## 4. Contrato conceptual futuro
+
+La integración futura debe estar detrás de un límite de aplicación y no debe
+acoplar el dominio a un SDK. Los nombres conceptuales auditados son:
+
+* `PaymentGatewayProvider`: capacidades de un proveedor, como crear un intento,
+  confirmar una operación y verificar una notificación;
+* `PaymentGatewayTransaction`: referencia normalizada del proveedor, estado,
+  importe, moneda y timestamps relevantes;
+* `PaymentGatewayWebhook`: evento externo recibido, firma verificada, identidad
+  del proveedor y resultado de procesamiento;
+* `PaymentGatewayAttempt`: intento de checkout o reintento, su clave de
+  idempotencia y su relación con el pedido.
+
+Estos nombres describen un contrato futuro y no representan clases, tablas ni
+servicios implementados en 10.1. La implementación posterior debe ubicar los
+adaptadores en Infrastructure, mantener las Actions como orquestadoras y
+evitar que el dominio conozca HTTP, SDKs o credenciales.
+
+## 5. Fuente de verdad por etapa futura
+
+La separación propuesta es:
+
+| Etapa | Fuente primaria | Regla |
+| --- | --- | --- |
+| Antes del pago | `Order` y `Payment` | El importe, moneda y vigencia salen del pedido persistido. |
+| Checkout | `PaymentGatewayAttempt` futuro | El intento relaciona la solicitud externa con el pedido. |
+| Autorizado | Transacción del proveedor normalizada | No equivale a pago confirmado hasta cumplir la política de captura. |
+| Capturado o pagado | `Payment` y `Order` | La confirmación comercial se persiste en PostgreSQL. |
+| Fallido | Intento y `Payment` | Un fallo técnico no debe convertir automáticamente un pago en rechazo comercial. |
+| Expirado | Intento y `Order` | La expiración debe respetar la vigencia del pedido y sus transiciones. |
+| Reembolsado | `Refund`, `Payment` y `Order` | El reembolso se registra una sola vez y mantiene su auditoría. |
+| Notificación tardía o duplicada | `PaymentGatewayWebhook` futuro | Se deduplica y se compara con el estado terminal existente. |
+| Reconciliación | Proveedor frente a PostgreSQL | Las diferencias se detectan y resuelven explícitamente. |
+
+El proveedor nunca es fuente de verdad del estado público de la aplicación.
+Una llamada externa no debe ejecutarse dentro de la transacción que confirma
+el estado comercial.
+
+## 6. Estados propuestos para una futura migración
+
+La nomenclatura conceptual propuesta es:
+
+* `manual_pending`;
+* `gateway_pending`;
+* `gateway_authorized`;
+* `gateway_paid`;
+* `gateway_failed`;
+* `gateway_expired`;
+* `gateway_refunded`.
+
+No se deben insertar estos valores en los enums actuales sin una decisión de
+compatibilidad y una migración. La correspondencia inicial orientativa sería:
+
+| Estado futuro | Estado actual compatible | Observación |
+| --- | --- | --- |
+| `manual_pending` | `pending` o `under_review` | Depende de si ya existe evidencia manual. |
+| `gateway_pending` | `pending` | El intento futuro distingue el origen. |
+| `gateway_authorized` | Sin equivalente seguro | No debe marcarse `approved` antes de capturar. |
+| `gateway_paid` | `approved` y `paid` | Requiere confirmación comercial persistida. |
+| `gateway_failed` | Sin transición automática obligatoria | Un error transitorio no es rechazo comercial. |
+| `gateway_expired` | `cancelled` o `expired` | Depende de la regla de vigencia del pedido. |
+| `gateway_refunded` | `refunded` y `refunded` | Debe existir un `Refund` único. |
+
+La migración futura debe conservar lecturas y escrituras del flujo manual hasta
+que exista una política de transición aprobada.
+
+## 7. Idempotencia y concurrencia
+
+El contrato actual usa `Idempotency-Key` para las operaciones Commerce que
+producen efectos. `IdempotencyContext`, `IdempotencyKeyStore` y
+`IdempotentCommandExecutor` normalizan la solicitud, calculan un hash del
+payload, reclaman la clave y guardan el resultado. Una repetición con el mismo
+payload puede reproducir el resultado; una repetición con payload diferente
+debe fallar como conflicto.
+
+Para una integración futura:
+
+* crear un intento debe reclamar una clave por usuario, pedido, operación y
+  proveedor;
+* reintentar checkout con la misma clave y huella debe devolver el intento
+  anterior, sin una segunda operación externa;
+* reusar una clave con otra huella debe ser un conflicto estable;
+* confirmar autorización o captura debe bloquear `Payment` y `Order`, validar
+  sus relaciones y aplicar una única transición en una transacción;
+* una transición terminal repetida debe ser un resultado idempotente o una
+  discrepancia explícita, nunca una segunda venta o reembolso;
+* un doble approval y un doble release deben quedar protegidos por los locks,
+  constraints y Actions actuales;
+* un webhook repetido debe usar el identificador del proveedor y el proveedor
+  como deduplicación, nunca el payload crudo;
+* un evento Outbox repetido debe conservar una sola `deduplication_key`;
+* `notification_deliveries` deduplica la entrega posterior, pero no reemplaza
+  la idempotencia del pago.
+
+La reclamación de una clave debe ocurrir antes de efectos externos o mutaciones
+comerciales. Los locks y las transacciones protegen el estado confirmado; no
+garantizan que un proveedor externo haya ejecutado una operación.
+
+## 8. Diseño futuro de webhooks
+
+Como propuesta, no implementada en 10.1, el endpoint podría ser:
+
+`POST /api/v1/webhooks/payments/{provider}`
+
+El adaptador futuro debería:
+
+1. validar el proveedor esperado y la versión del contrato;
+2. verificar firma y timestamp con comparación en tiempo constante;
+3. rechazar mensajes sin autenticidad verificable sin exponer detalles;
+4. guardar, con acceso restringido, una referencia al payload original y su
+   hash, sin mostrarlo al frontend;
+5. deduplicar por `provider` e identificador del evento;
+6. procesar el evento dentro de una transacción con locks sobre `Payment` y
+   `Order`;
+7. tratar estados terminales como replay seguro o discrepancia auditable;
+8. distinguir errores reintentables de errores permanentes;
+9. registrar el resultado de procesamiento y permitir una reconciliación
+   posterior.
+
+El endpoint, las tablas de webhook, la política de replay y la política de
+respuestas HTTP requieren una fase posterior aprobada. Este documento no los
+crea.
+
+## 9. Seguridad y datos sensibles
+
+La aplicación no debe recibir ni persistir números completos de tarjeta, CVV,
+claves privadas, tokens secretos ni credenciales del proveedor. Los logs deben
+contener identificadores técnicos mínimos y nunca secretos, payloads completos
+ni datos de autenticación.
+
+Las credenciales futuras deben vivir exclusivamente en variables de entorno o
+en un gestor de secretos. Sandbox y producción deben tener configuración y
+credenciales separadas. Las respuestas públicas solo deben incluir estados y
+referencias no sensibles; nunca deben incluir el payload completo del
+proveedor, tokens de sesión o material criptográfico.
+
+## 10. Integración con Outbox y Notifications
+
+Cuando una futura confirmación cambie el estado comercial, la mutación de
+`Payment`/`Order` y el registro Outbox correspondiente deben confirmarse en la
+misma transacción. Los handlers de Outbox seguirán siendo responsables de
+notificaciones; las Actions de dominio no deben llamar `notify()`, `Mail::` ni
+`Notification::`.
+
+Los eventos existentes relacionados con el flujo aprobado son:
+
+* `payment_approved`;
+* `payment_rejected`;
+* `order_refunded`;
+* `winner_payout_registered`;
+* `game_winner_declared`.
+
+10.1 no agrega eventos ni modifica handlers o `notification_deliveries`.
+La entrega continúa siendo durable y de mejor esfuerzo con semántica de
+reintento `at-least-once`; no se promete `exactly-once`. La ejecución futura
+seguirá usando el `worker` de la cola y el `scheduler` ya documentados para
+Outbox, sin convertirlos en fuente de verdad.
+
+## 11. Evaluación conceptual de proveedores
+
+La comparación inicial para Perú debe considerar Culqi y Niubiz, y Stripe solo
+si el modelo comercial y la disponibilidad regional lo justifican. También
+debe mantenerse el flujo manual como alternativa operativa durante la adopción.
+
+La decisión debe evaluar cobertura de moneda y país, checkout, autorización y
+captura, reembolsos, firma de webhooks, identificadores idempotentes,
+reconciliación, soporte, costos, sandbox y requisitos de cumplimiento. No se
+selecciona proveedor ni se incorporan SDKs o credenciales en esta fase.
+
+## 12. Pruebas requeridas para una fase de implementación
+
+Antes de activar un proveedor deberán existir, como mínimo:
+
+* pruebas de contrato del adaptador con un `Fake` determinista;
+* creación, reintento y conflicto de `PaymentGatewayAttempt`;
+* concurrencia sobre confirmación, captura y reembolso;
+* firmas válidas, inválidas, expiradas y payload alterado;
+* replay y webhook duplicado sin doble transición;
+* estados terminales y late webhook;
+* reconciliación de diferencias entre proveedor y PostgreSQL;
+* ausencia de PII, CVV, secretos y payload completo en logs o Resources;
+* confirmación de que Outbox se registra una sola vez y que Notifications
+  conserva su deduplicación;
+* regresión completa de Commerce, Game, Auth y Architecture sin Redis externo.
+
+## 13. Próximo bloque y límites
+
+El Bloque 10.2, sujeto a aprobación independiente, puede seleccionar un
+proveedor y definir el adapter contract, configuración de sandbox, credenciales
+seguras, migraciones y entidades futuras, checkout, confirmación y webhooks.
+Debe incluir pruebas de integración con `Fake`, operación de reconciliación y
+un plan de rollback.
+
+La Fase 10.1 no implementa gateway real, webhook real, checkout, frontend,
+credenciales, nuevas tablas, nuevos eventos Outbox ni nuevas rutas HTTP. Las
+garantías actuales son las del flujo manual y sus transacciones, locks,
+constraints, idempotencia y Outbox. No se afirma ejecución exactly-once por
+parte del proveedor ni entrega garantizada de notificaciones externas.
