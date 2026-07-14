@@ -12,7 +12,9 @@ Los handlers de `OutboxEventDispatcher` pasan de ser no-op a enviar notificacion
 |---------|-----------|
 | 9.1 | Auditoría y contrato (este documento — sin código productivo) |
 | 9.2 | Email transaccional: handlers reales + `notification_deliveries` + Mailable por evento |
-| 9.3 | WhatsApp / canal adicional (pendiente de definición) |
+| 9.3 | Runtime readiness de notificaciones |
+| 9.4 | Cierre final de notificaciones |
+| 9.5 o posterior | WhatsApp / canal adicional (pendiente de definición) |
 
 ---
 
@@ -350,7 +352,7 @@ public function isRetryableFailed(): bool;
 
 Para `exactly-once` real de email sería necesario:
 - Soporte de `Idempotency-Key` por el proveedor externo (Resend, SES, Postmark — no universal), o
-- Una capa de delivery tracking con callbacks/webhooks confiables del proveedor (Fase 9.3+).
+- Una capa de delivery tracking con callbacks/webhooks confiables del proveedor (Fase 9.5 o posterior).
 
 Esta limitación debe documentarse en el código y comunicarse al equipo operacional.
 
@@ -364,14 +366,14 @@ Esta limitación debe documentarse en el código y comunicarse al equipo operaci
 
 Las Auth Notifications (password reset, email verification) ya usan email. En 9.2 se agrega `ShouldQueue` para hacerlas asíncronas.
 
-### 7.2 Fase 9.3 — WhatsApp
+### 7.2 WhatsApp - Fase 9.5 o posterior
 
 Canal adicional para las Domain Notifications. Requiere:
 - Proveedor (Twilio, Meta Cloud API).
 - Número de teléfono verificado en `users` (pendiente de diseño de schema).
 - Handler adicional en `notification_deliveries` con `channel = 'whatsapp'`.
 
-**No implementar en Fase 9.2.** El campo `channel` en `notification_deliveries` ya contempla este escenario.
+**No implementar antes de Fase 9.5.** El campo `channel` en `notification_deliveries` ya contempla este escenario.
 
 ### 7.3 SMS — Fuera de alcance
 
@@ -539,7 +541,7 @@ Así los emails se interceptan visualmente en `http://localhost:8025` sin salir 
 
 ### 9.6 ¿Instalar phpredis antes de Fase 9.2?
 
-**No es necesario para Fase 9.2.** Las queues de Fase 9.2 pueden usar `database`. Si en Fase 9.3 se necesita Redis para performance o broadcasting, instalar entonces:
+**No es necesario para Fase 9.2.** Las queues de Fase 9.2 pueden usar `database`. Si una fase futura necesita Redis para performance o broadcasting, instalarlo entonces:
 
 ```dockerfile
 RUN apk add --no-cache $PHPIZE_DEPS \
@@ -819,7 +821,7 @@ Lo siguiente **no se implementa** en Fase 9.x y requiere aprobación antes de in
 | Feature | Estado |
 |---------|--------|
 | Proveedor SMTP real (Resend, SES, Postmark) | Fuera de Fase 9.2 — se usa Mailpit |
-| WhatsApp | Fuera de Fase 9.2 — postergado a 9.3 o posterior |
+| WhatsApp | Fuera de Fase 9.4 - postergado a 9.5 o posterior |
 | SMS | Fuera de alcance |
 | Gateway de pagos externo | Fuera de alcance |
 | Webhooks externos | Fuera de alcance |
@@ -901,3 +903,126 @@ Ambos tests fueron actualizados para:
 | `Phase92NotificationArchitectureTest` | 11 | ✓ todos pasan |
 | `Integration/Shared` + `Unit/Architecture` | 142 | ✓ todos pasan |
 | Suite completa | 1345 tests / 6396 assertions | ✓ 0 failures en verificación final |
+
+---
+
+## 16. Fase 9.3 — Runtime readiness de notificaciones
+
+La Fase 9.3 prepara el runtime local y operativo para procesar Outbox y entregar las notificaciones de dominio existentes. No añade eventos, endpoints ni proveedores externos.
+
+### 16.1 Queue runtime
+
+El entorno local usa la cola `database`. Las tablas `jobs` y `failed_jobs` son necesarias. El worker recomendado es:
+
+```bash
+php artisan queue:work database --queue=default --sleep=3 --tries=3 --timeout=90
+```
+
+Comandos básicos:
+
+```bash
+php artisan queue:failed
+php artisan queue:retry all
+php artisan queue:flush
+php artisan queue:restart
+```
+
+El scheduler ejecuta `ProcessOutboxEventsJob` una vez por minuto. `retry_after=90` es superior al timeout del job del procesador (`55` segundos); el worker mantiene su timeout operativo en `90` segundos.
+
+En producción, un supervisor puede mantener el worker activo:
+
+```ini
+[program:rifas-queue-worker]
+command=php /var/www/artisan queue:work database --queue=default --sleep=3 --tries=3 --timeout=90
+autostart=true
+autorestart=true
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/rifas-queue-worker.log
+```
+
+El cron del scheduler es:
+
+```cron
+* * * * * cd /var/www/backend_rifas_app && php artisan schedule:run >> /dev/null 2>&1
+```
+
+Las pruebas usan `sync` y `array`; no requieren Redis, Reverb ni un worker externo.
+
+### 16.2 Mailpit local
+
+Docker Compose incluye Mailpit. La interfaz está en `http://localhost:8025`; desde el contenedor de la aplicación el SMTP usa host `mailpit` y puerto `1025`. No se configuran credenciales reales ni proveedores externos.
+
+`.env.example` usa:
+
+```dotenv
+MAIL_MAILER=smtp
+MAIL_HOST=mailpit
+MAIL_PORT=1025
+MAIL_USERNAME=null
+MAIL_PASSWORD=null
+MAIL_FROM_ADDRESS="noreply@rifas.local"
+MAIL_FROM_NAME="Rifas"
+QUEUE_CONNECTION=database
+```
+
+### 16.3 Smoke test manual
+
+1. Ejecutar `docker compose up -d` y confirmar `docker compose ps`.
+2. Ejecutar `php artisan optimize:clear`.
+3. Iniciar el worker de database.
+4. Ejecutar un flujo real que produzca un evento Outbox soportado.
+5. Confirmar `notification_deliveries`, `jobs`, `failed_jobs` y el mensaje en Mailpit.
+
+Este smoke test no crea endpoints, seeds ni datos operativos nuevos.
+
+### 16.4 Diagnóstico, recuperación y límites
+
+Ante una notificación que no llega, revisar Outbox, `notification_deliveries`, `jobs`, `failed_jobs`, el worker, Mailpit y los logs. Un fallo transitorio se recupera con el retry de la cola. Los registros de entrega y sus claves de idempotencia evitan reprocesar una entrega ya confirmada.
+
+El sistema ofrece procesamiento al menos una vez y entrega best-effort. No garantiza exactly-once ni entrega garantizada del broadcast o del correo. PostgreSQL continúa siendo la fuente de verdad; Redis no es requisito ni fuente de verdad.
+
+Esta fase no incorpora WhatsApp, SMS, gateways externos, webhooks, frontend, plantillas administrativas, métricas avanzadas ni cleanup histórico. WhatsApp queda para Fase 9.5 o posterior.
+
+---
+
+## 17. Fase 9.4 — Cierre final de notificaciones
+
+### 17.1 Resumen final
+
+La Fase 9 queda cerrada con una cadena durable y recuperable: el evento se registra en Outbox, `OutboxEventDispatcher` lo enruta a un handler idempotente, el handler registra `NotificationDelivery` y encola una `Notification` de correo. Las cinco notificaciones de dominio implementan `ShouldQueue` y usan únicamente el canal `mail`.
+
+La garantía real es `best-effort idempotency` sobre procesamiento `at-least-once`. No se garantiza `exactly-once` ni entrega externa garantizada.
+
+### 17.2 Implementado
+
+- Cinco `Domain Notifications` y cinco handlers para los cinco `event_type` aprobados.
+- Estados `pending`, `queued`, `sent` y `failed`, con semántica explícita para `queued_at` y `sent_at`.
+- Procesamiento Outbox con reintentos, `failed_jobs`, worker de `database` y scheduler con `ProcessOutboxEventsJob` cada minuto.
+- Runtime local reproducible con Mailpit y pruebas sin SMTP externo ni gateway.
+- Guards arquitectónicos para impedir canales y dependencias fuera del alcance.
+
+### 17.3 No implementado
+
+No se implementaron WhatsApp, SMS, gateways externos, webhooks, frontend, panel admin, proveedor SMTP real, nuevos eventos Outbox, métricas avanzadas, cleanup histórico ni cambios de negocio en Commerce, Game o Auth.
+
+### 17.4 Operación local y producción
+
+En local, ejecutar `docker compose up -d`, confirmar `QUEUE_CONNECTION=database`, `MAIL_HOST=mailpit`, `MAIL_PORT=1025`, iniciar `php artisan queue:work database --queue=default --sleep=3 --tries=3 --timeout=90` y revisar `http://localhost:8025`.
+
+En producción, mantener un worker persistente mediante Supervisor o equivalente y ejecutar `php artisan schedule:run` cada minuto mediante cron. PostgreSQL es la fuente de verdad para Outbox, entregas, `jobs` y `failed_jobs`.
+
+### 17.5 Smoke test y fallos
+
+Producir un evento soportado, comprobar Outbox, verificar el procesamiento, revisar `notification_deliveries`, confirmar el correo en Mailpit y revisar `failed_jobs` ante errores. Usar `php artisan queue:failed` y `php artisan queue:retry all` según la política operativa.
+
+Los eventos desconocidos o payloads inválidos se marcan como fallidos y no se ocultan. Un `pending` reciente no se reenvía automáticamente; un `pending` vencido puede volver a procesarse. `queued_at` representa que `notify()` aceptó el trabajo en la cola; `sent_at` queda reservado para una confirmación efectiva del mailer si posteriormente se incorpora un listener `NotificationSent`.
+
+### 17.6 Pendientes explícitos
+
+- WhatsApp futuro y cualquier canal adicional.
+- Proveedor SMTP real y sus credenciales operativas.
+- Branding final de las plantillas de correo.
+- Listener `NotificationSent` si se requiere auditoría exacta de entrega.
+- Panel admin futuro.
+- Cleanup futuro de históricos y política de retención.
