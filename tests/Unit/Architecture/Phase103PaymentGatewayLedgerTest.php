@@ -65,7 +65,7 @@ final class Phase103PaymentGatewayLedgerTest extends TestCase
     {
         $migrationPaths = glob(database_path('migrations/*payment_gateway_*.php'));
 
-        $this->assertCount(3, $migrationPaths);
+        $this->assertCount(4, $migrationPaths);
 
         foreach ($migrationPaths as $migrationPath) {
             $source = file_get_contents($migrationPath);

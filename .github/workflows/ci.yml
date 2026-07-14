@@ -15,13 +15,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: backend_rifas_app_test
+          POSTGRES_DB: backend_rifas_app_test_ci
           POSTGRES_USER: rifas
           POSTGRES_PASSWORD: testing-secret
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U rifas -d backend_rifas_app_test"
+          --health-cmd "pg_isready -U rifas -d backend_rifas_app_test_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -40,7 +40,7 @@ jobs:
       DB_CONNECTION: pgsql
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
-      DB_DATABASE: backend_rifas_app_test
+      DB_DATABASE: backend_rifas_app_test_ci
       DB_USERNAME: rifas
       DB_PASSWORD: testing-secret
       CACHE_STORE: redis
@@ -63,6 +63,13 @@ jobs:
           path: vendor
           key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
       - run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Guard isolated test database
+        run: |
+          test "$APP_ENV" = "testing"
+          case "$DB_DATABASE" in
+            backend_rifas_app_test_*) ;;
+            *) echo "Unsafe backend test database" >&2; exit 1 ;;
+          esac
       - name: Prepare application
         run: |
           cp .env.example .env
