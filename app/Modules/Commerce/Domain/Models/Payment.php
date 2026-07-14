@@ -65,6 +65,15 @@ class Payment extends Model
         $this->status = $next;
     }
 
+    public function approveFromGateway(): void
+    {
+        if ($this->status !== PaymentStatus::Pending) {
+            throw InvalidPaymentTransition::from($this->status, PaymentStatus::Approved);
+        }
+
+        $this->status = PaymentStatus::Approved;
+    }
+
     /**
      * @return BelongsTo<Order, $this>
      */

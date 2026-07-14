@@ -29,6 +29,7 @@ class PaymentGatewayTransaction extends Model
             'authorized_at' => 'datetime',
             'captured_at' => 'datetime',
             'failed_at' => 'datetime',
+            'applied_at' => 'datetime',
         ];
     }
 

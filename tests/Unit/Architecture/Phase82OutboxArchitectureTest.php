@@ -32,7 +32,7 @@ final class Phase82OutboxArchitectureTest extends TestCase
 
     private const JOB = self::SHARED_APP.'/Application/Jobs/ProcessOutboxEventsJob.php';
 
-    private const APPROVE_ACTION = __DIR__.'/../../../app/Modules/Commerce/Application/Actions/ApprovePaymentAction.php';
+    private const APPROVAL_TRANSITION_ACTION = __DIR__.'/../../../app/Modules/Commerce/Application/Actions/ApplyApprovedPaymentTransitionAction.php';
 
     private function read(string $path): string
     {
@@ -107,9 +107,9 @@ final class Phase82OutboxArchitectureTest extends TestCase
 
     // ── 4. Approve action outbox payload contains no sensitive fields ─────────
 
-    public function test_outbox_payload_in_approve_action_excludes_sensitive_fields(): void
+    public function test_outbox_payload_in_shared_approval_transition_excludes_sensitive_fields(): void
     {
-        $content = $this->read(self::APPROVE_ACTION);
+        $content = $this->read(self::APPROVAL_TRANSITION_ACTION);
 
         // Find the payload array passed to recordOutbox->execute()
         $sensitiveFields = [
@@ -136,7 +136,7 @@ final class Phase82OutboxArchitectureTest extends TestCase
                 );
             }
         } else {
-            $this->fail('Could not locate recordOutbox->execute() call in ApprovePaymentAction.');
+            $this->fail('Could not locate recordOutbox->execute() call in ApplyApprovedPaymentTransitionAction.');
         }
     }
 
@@ -204,20 +204,20 @@ final class Phase82OutboxArchitectureTest extends TestCase
         );
     }
 
-    public function test_approve_payment_action_records_outbox_event(): void
+    public function test_shared_approval_transition_records_outbox_event(): void
     {
-        $content = $this->read(self::APPROVE_ACTION);
+        $content = $this->read(self::APPROVAL_TRANSITION_ACTION);
 
         $this->assertStringContainsString(
             'recordOutbox',
             $content,
-            'ApprovePaymentAction must call recordOutbox->execute() to insert the outbox event.'
+            'ApplyApprovedPaymentTransitionAction must call recordOutbox->execute() to insert the outbox event.'
         );
     }
 
-    public function test_approve_payment_action_does_not_record_outbox_on_replay_branch(): void
+    public function test_shared_approval_transition_does_not_record_outbox_on_replay_branch(): void
     {
-        $content = $this->read(self::APPROVE_ACTION);
+        $content = $this->read(self::APPROVAL_TRANSITION_ACTION);
 
         // The idempotent replay branch returns early (wasTransitionApplied = false).
         // The $this->recordOutbox->execute() call (actual dispatch) must appear
@@ -225,8 +225,8 @@ final class Phase82OutboxArchitectureTest extends TestCase
         $replayReturnPos = strpos($content, 'wasTransitionApplied: false');
         $outboxCallPos = strpos($content, '$this->recordOutbox->execute(');
 
-        $this->assertNotFalse($replayReturnPos, 'Could not find wasTransitionApplied: false in ApprovePaymentAction.');
-        $this->assertNotFalse($outboxCallPos, 'Could not find $this->recordOutbox->execute( in ApprovePaymentAction.');
+        $this->assertNotFalse($replayReturnPos, 'Could not find wasTransitionApplied: false in ApplyApprovedPaymentTransitionAction.');
+        $this->assertNotFalse($outboxCallPos, 'Could not find $this->recordOutbox->execute( in ApplyApprovedPaymentTransitionAction.');
         $this->assertGreaterThan(
             $replayReturnPos,
             $outboxCallPos,

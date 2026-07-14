@@ -334,19 +334,102 @@ foundation y ledger. No se almacenan números de tarjeta, CVV, secretos,
 credenciales, tokens ni payloads completos. La deduplicación es idempotencia
 de mejor esfuerzo respaldada por PostgreSQL. No se afirma exactly-once.
 
-La siguiente etapa, sujeta a aprobación, podrá definir una integración real,
-pero deberá conservar este ledger como registro técnico y mantener el flujo
-manual durante la transición.
+La siguiente etapa, sujeta a aprobación, puede construir orquestación interna
+sobre este ledger, pero deberá conservarlo como registro técnico y mantener el
+flujo manual durante la transición.
+
+## Fase 10.4 — Gateway orchestration with fake provider
+
+Esta fase agrega la orquestación interna de gateway usando únicamente
+`FakePaymentGatewayProvider`, los contratos de 10.2 y el ledger de 10.3. No
+existe proveedor real, SDK, HTTP externo, endpoint de checkout ni webhook
+público.
+
+Las actions creadas son:
+
+* `CreateGatewayPaymentAttemptAction`: bloquea `Order` y `Payment` en ese
+  orden, valida usuario y estados `pending`, solicita un attempt al registry,
+  y registra el resultado en `payment_gateway_attempts`;
+* `ConfirmGatewayPaymentAttemptAction`: recupera el attempt, confirma mediante
+  el fake, registra una transacción técnica y devuelve el resultado normalizado;
+* `RecordGatewayWebhookNotificationAction`: valida la firma con el verifier
+  fake, normaliza el payload y registra únicamente su referencia técnica en
+  `payment_gateway_webhooks`.
+
+Los DTOs de orquestación son `readonly` y no contienen PII, secretos ni
+payloads completos. Los resultados exponen solo identificadores técnicos,
+estado, monto, moneda, fechas y referencias fake necesarias para continuar el
+flujo interno.
+
+La idempotencia se mantiene en dos niveles: el fake rechaza la reutilización
+de una clave con fingerprint distinto y PostgreSQL protege el ledger con sus
+constraints únicas. Un replay del mismo attempt devuelve el registro previo;
+un replay de confirmación no crea otra transacción; un webhook repetido no
+crea otra fila. Las discrepancias se propagan como errores internos
+testeables, sin revelar secretos.
+
+La orquestación no cambia `PaymentStatus` a `approved`, no cambia
+`OrderStatus` a `paid`, no llama `ApprovePaymentAction`, no confirma números,
+no registra Outbox y no genera notificaciones. La confirmación almacenada es
+únicamente técnica; la transición comercial queda reservada para la Fase
+10.5.
+
+La Fase 10.5 podrá decidir la integración comercial, las transiciones de
+`Payment` y `Order`, captura o reembolso externo, reconciliación y sus
+controles operativos. Ninguna de esas capacidades forma parte de 10.4.
+
+## Fase 10.5 — Gateway commercial settlement
+
+El settlement recibe una `PaymentGatewayTransaction` persistida y solo aplica
+la transición si el estado técnico es `paid` o `captured`. Verifica proveedor,
+entorno `sandbox`, relaciones entre transaction, attempt, `Payment`, `Order` y
+`Game`, además de monto exacto y moneda exacta. Los estados `authorized`,
+`failed` y `expired` no producen transición comercial, rechazo automático ni
+liberación automática.
+
+La mutación reutiliza `ApplyApprovedPaymentTransitionAction`, compartida con
+`ApprovePaymentAction`, y conserva el orden canónico de locks:
+
+`Game -> Order -> Payment -> OrderItems -> NumberReservations -> GameNumbers`
+
+Las filas gateway se leen antes de la transición para validar el contrato y se
+marca `applied_at` después de completar la cadena comercial bajo los locks
+canónicos. No se hacen llamadas externas dentro de la transacción. `applied_at`
+es una marca técnica durable de que esa transaction ya aplicó el settlement.
+
+El camino gateway permite únicamente `Payment: pending -> approved` y
+`Order: pending -> paid`; no inventa un reviewer. El procesamiento deja
+`reviewed_by` nulo y usa el origen explícito `gateway`. Un replay de la misma
+transaction devuelve el snapshot existente sin duplicar entries, allocations,
+game events, Outbox o notifications. Otra transaction pagada para el mismo
+`Payment`, o cualquier discrepancia de relación, proveedor, entorno, monto o
+moneda, produce un conflicto estable.
+
+La aprobación comercial y el único evento Outbox `payment_approved` se
+confirman en la misma transacción. Las notifications siguen siendo responsabilidad
+de los handlers de Outbox; ninguna Action llama `notify()`, `Mail::` o
+`Notification::` directamente. La idempotencia es de mejor esfuerzo respaldada
+por PostgreSQL y los locks; no se afirma exactly-once.
+
+Las pruebas cubren `paid`, `captured`, estados no aplicables, discrepancias,
+replay e idempotencia, dos procesos concurrentes, ausencia de duplicados y
+preservación del flujo manual. El fake continúa siendo el único proveedor y no
+hay endpoint público, checkout, webhook HTTP ni credenciales reales.
+
+## Fase 10.6 — Pendiente de aprobación
+
+La Fase 10.6 queda fuera de este cierre. Cualquier proveedor real, SDK, HTTP
+externo, checkout, webhooks productivos, captura externa, reembolso, cancelación
+o reconciliación requiere una fase independiente y una aprobación explícita.
 
 ## 14. Próxima fase y límites
 
-La Fase 10.4, sujeta a aprobación, podrá seleccionar un proveedor, definir el
-adaptador concreto, crear persistencia de intentos y webhooks si resulta
-necesario, integrar checkout, confirmación, captura, reembolso y
-reconciliación, y establecer operación de sandbox y producción.
+La siguiente fase sujeta a aprobación es la Fase 10.6, después de revisar los
+riesgos, contratos y operación del proveedor que se seleccione.
 
-En Fase 10.2 no se implementan proveedor real, SDK real, HTTP externo, webhook
-productivo, checkout frontend, redirecciones, credenciales reales, captura,
-reembolso del proveedor, nuevas tablas, nuevos eventos Outbox ni cambios en el
-flujo manual. Las garantías continúan siendo las del contrato interno y del
-fake. No se afirma ejecución exactly-once ni entrega externa garantizada.
+En Fase 10.5 no se implementan proveedor real, SDK real, HTTP externo, webhook
+productivo, checkout frontend, redirecciones, credenciales reales, captura o
+reembolso del proveedor, nuevas tablas distintas de `applied_at`, nuevos
+eventos Outbox ni cambios en el flujo manual. Las garantías continúan siendo
+las del contrato interno y del fake. No se afirma ejecución exactly-once ni
+entrega externa garantizada.

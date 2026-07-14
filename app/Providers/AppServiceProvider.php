@@ -4,10 +4,14 @@ namespace App\Providers;
 
 use App\Modules\Commerce\Application\Gateway\PaymentGatewayProvider;
 use App\Modules\Commerce\Application\Gateway\PaymentGatewayProviderRegistry;
+use App\Modules\Commerce\Application\Gateway\PaymentGatewayWebhookNormalizer;
+use App\Modules\Commerce\Application\Gateway\PaymentGatewayWebhookVerifier;
 use App\Modules\Commerce\Domain\Models\Order;
 use App\Modules\Commerce\Domain\Models\Payment;
 use App\Modules\Commerce\Infrastructure\GameLifecycle\CommerceGameStartReadinessChecker;
 use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayProvider;
+use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayWebhookNormalizer;
+use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayWebhookVerifier;
 use App\Modules\Commerce\Presentation\Http\Policies\OrderPolicy;
 use App\Modules\Commerce\Presentation\Http\Policies\PaymentPolicy;
 use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
@@ -51,6 +55,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(PaymentGatewayProvider::class, function (Application $app): PaymentGatewayProvider {
             return $app->make(PaymentGatewayProviderRegistry::class)->default();
         });
+        $this->app->bind(PaymentGatewayWebhookNormalizer::class, FakePaymentGatewayWebhookNormalizer::class);
+        $this->app->bind(PaymentGatewayWebhookVerifier::class, FakePaymentGatewayWebhookVerifier::class);
         $this->app->singleton(EngineTickCommandIdGenerator::class, fn () => new EngineTickCommandIdGenerator(
             (string) config('engine.draw_command_namespace'),
         ));

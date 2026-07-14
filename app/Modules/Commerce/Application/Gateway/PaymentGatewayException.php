@@ -37,4 +37,14 @@ final class PaymentGatewayException extends RuntimeException
     {
         return new self($message, 1005);
     }
+
+    public static function settlementNotApplicable(): self
+    {
+        return new self('The gateway transaction is not applicable for settlement.', 1009);
+    }
+
+    public static function settlementConflict(): self
+    {
+        return new self('The gateway settlement conflicts with the commercial payment state.', 1010);
+    }
 }

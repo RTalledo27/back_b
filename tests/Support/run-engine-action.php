@@ -25,6 +25,8 @@ use App\Modules\Commerce\Application\Actions\RefundOrderAction;
 use App\Modules\Commerce\Application\DTOs\ApprovePaymentData;
 use App\Modules\Commerce\Application\DTOs\ProcessWinnerPayoutData;
 use App\Modules\Commerce\Application\DTOs\RefundOrderData;
+use App\Modules\Commerce\Application\Gateway\Actions\SettleGatewayPaidTransactionAction;
+use App\Modules\Commerce\Application\Gateway\GatewayPaymentSettlementRequest;
 use App\Modules\RepeatNumberBingo\Application\Actions\DrawGameNumberAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\ExecuteScheduledGameDrawAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\RebuildGameNumberCountersAction;
@@ -220,6 +222,24 @@ try {
             'payment_status' => $result->paymentStatus,
             'was_transition_applied' => $result->wasTransitionApplied,
             'paid_at' => $result->paidAt,
+        ]).PHP_EOL;
+        exit(0);
+    }
+
+    if ($action === 'settle') {
+        $result = $app->make(SettleGatewayPaidTransactionAction::class)->execute(
+            new GatewayPaymentSettlementRequest(
+                transactionId: (string) ($args['TRANSACTION_ID'] ?? ''),
+                provider: (string) ($args['PROVIDER'] ?? ''),
+            ),
+        );
+        echo json_encode([
+            'ok' => true,
+            'action' => 'settle',
+            'transaction_id' => $result->transactionId,
+            'payment_status' => $result->paymentStatus,
+            'order_status' => $result->orderStatus,
+            'was_settlement_applied' => $result->wasSettlementApplied,
         ]).PHP_EOL;
         exit(0);
     }

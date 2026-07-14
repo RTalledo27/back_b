@@ -73,6 +73,15 @@ class Order extends Model
         $this->status = $next;
     }
 
+    public function markPaidFromGateway(): void
+    {
+        if ($this->status !== OrderStatus::Pending) {
+            throw InvalidOrderTransition::from($this->status, OrderStatus::Paid);
+        }
+
+        $this->status = OrderStatus::Paid;
+    }
+
     /**
      * @return BelongsTo<User, $this>
      */
