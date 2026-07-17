@@ -24,6 +24,16 @@ final class OrderPolicy
         return $order->user_id === $user->id;
     }
 
+    public function createGatewayAttempt(User $user, Order $order): bool
+    {
+        return $order->user_id === $user->id;
+    }
+
+    public function viewGatewayAttempt(User $user, Order $order): bool
+    {
+        return $order->user_id === $user->id;
+    }
+
     public function cancel(User $user, Order $order): bool
     {
         return $order->user_id === $user->id || $user->isAdmin();

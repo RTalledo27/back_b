@@ -47,6 +47,13 @@ final class RecordGatewayWebhookNotificationAction
             eventType: $payload->eventType,
             signatureVerified: $payload->signatureVerified,
             payloadHash: $payload->payloadHash,
+            normalizedStatus: $payload->status,
+            amountCents: $payload->amountCents,
+            currency: $payload->currency,
+            occurredAt: $payload->occurredAt,
+            providerAttemptId: $payload->providerAttemptId,
+            providerTransactionId: $payload->providerTransactionId,
+            environment: $payload->environment,
         ));
 
         return GatewayWebhookRecordResponse::fromModel($webhook);

@@ -33,6 +33,14 @@ final class FakePaymentGatewayWebhookNormalizer implements PaymentGatewayWebhook
                 }
             }
 
+            $headerEventId = isset($headers['X-Gateway-Event-Id'])
+                ? self::optionalString($headers['X-Gateway-Event-Id'], 'X-Gateway-Event-Id')
+                : null;
+
+            if ($headerEventId !== null && $headerEventId !== (string) $data['provider_event_id']) {
+                throw PaymentGatewayException::malformedWebhook('Webhook event identity does not match its signed header.');
+            }
+
             return new PaymentGatewayWebhookPayload(
                 provider: trim($provider),
                 providerEventId: (string) $data['provider_event_id'],
@@ -46,11 +54,31 @@ final class FakePaymentGatewayWebhookNormalizer implements PaymentGatewayWebhook
                     $headers['signature_verified'] ?? false,
                     FILTER_VALIDATE_BOOL,
                 ),
+                providerAttemptId: isset($data['provider_attempt_id'])
+                    ? self::optionalString($data['provider_attempt_id'], 'provider_attempt_id')
+                    : null,
+                providerTransactionId: isset($data['provider_transaction_id'])
+                    ? self::optionalString($data['provider_transaction_id'], 'provider_transaction_id')
+                    : null,
+                environment: isset($data['environment'])
+                    ? self::optionalString($data['environment'], 'environment')
+                    : null,
             );
         } catch (PaymentGatewayException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
             throw PaymentGatewayException::malformedWebhook($exception->getMessage());
         }
+    }
+
+    private static function optionalString(mixed $value, string $field): string
+    {
+        $normalized = trim((string) $value);
+
+        if ($normalized === '') {
+            throw PaymentGatewayException::malformedWebhook("Webhook field [{$field}] must not be empty.");
+        }
+
+        return $normalized;
     }
 }

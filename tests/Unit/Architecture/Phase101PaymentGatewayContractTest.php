@@ -54,7 +54,7 @@ final class Phase101PaymentGatewayContractTest extends TestCase
         self::assertStringContainsString("return ['mail'];", $contents);
     }
 
-    public function test_no_real_provider_sdk_classes_credentials_or_webhook_routes_exist(): void
+    public function test_no_real_provider_sdk_classes_credentials_or_uncontrolled_routes_exist(): void
     {
         foreach ($this->phpFiles($this->rootPath('app')) as $file) {
             $contents = $this->read($file);
@@ -82,7 +82,7 @@ final class Phase101PaymentGatewayContractTest extends TestCase
             $contents = $this->read($file);
 
             self::assertDoesNotMatchRegularExpression(
-                '#/webhooks?/payments(?:/|\b)#i',
+                '/(?:checkout|webhooks?\\/payments\\/(?:stripe|culqi|niubiz)|gateway\\/webhooks)/i',
                 $contents,
                 $file,
             );

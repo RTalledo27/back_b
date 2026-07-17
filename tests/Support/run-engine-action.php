@@ -25,8 +25,10 @@ use App\Modules\Commerce\Application\Actions\RefundOrderAction;
 use App\Modules\Commerce\Application\DTOs\ApprovePaymentData;
 use App\Modules\Commerce\Application\DTOs\ProcessWinnerPayoutData;
 use App\Modules\Commerce\Application\DTOs\RefundOrderData;
+use App\Modules\Commerce\Application\Gateway\Actions\ProcessGatewayWebhookAction;
 use App\Modules\Commerce\Application\Gateway\Actions\SettleGatewayPaidTransactionAction;
 use App\Modules\Commerce\Application\Gateway\GatewayPaymentSettlementRequest;
+use App\Modules\Commerce\Application\Gateway\ProcessGatewayWebhookData;
 use App\Modules\RepeatNumberBingo\Application\Actions\DrawGameNumberAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\ExecuteScheduledGameDrawAction;
 use App\Modules\RepeatNumberBingo\Application\Actions\RebuildGameNumberCountersAction;
@@ -239,6 +241,24 @@ try {
             'transaction_id' => $result->transactionId,
             'payment_status' => $result->paymentStatus,
             'order_status' => $result->orderStatus,
+            'was_settlement_applied' => $result->wasSettlementApplied,
+        ]).PHP_EOL;
+        exit(0);
+    }
+
+    if ($action === 'process-webhook') {
+        $result = $app->make(ProcessGatewayWebhookAction::class)->execute(
+            new ProcessGatewayWebhookData(
+                webhookId: (string) ($args['WEBHOOK_ID'] ?? ''),
+            ),
+        );
+        echo json_encode([
+            'ok' => true,
+            'action' => 'process-webhook',
+            'webhook_id' => $result->webhookId,
+            'status' => $result->status->value,
+            'transaction_id' => $result->transactionId,
+            'was_already_processed' => $result->wasAlreadyProcessed,
             'was_settlement_applied' => $result->wasSettlementApplied,
         ]).PHP_EOL;
         exit(0);

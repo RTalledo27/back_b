@@ -33,11 +33,14 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RejectPaymentContro
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowAdminPaymentController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowOrderRefundController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\PaymentGatewayWebhookController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\CancelOrderController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Player\CreateGatewayPaymentAttemptController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ListMyEntriesController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ListMyOrdersController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ListMyReservationsController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ReserveGameNumbersController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Player\ShowGatewayPaymentAttemptController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ShowMyOrderController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\SubmitPaymentEvidenceController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Public\ListGameNumbersPublicController;
@@ -229,3 +232,18 @@ Route::middleware('auth:sanctum')->prefix('me')->group(function (): void {
     Route::post('/orders/{order}/cancel', CancelOrderController::class);
     Route::get('/entries', ListMyEntriesController::class);
 });
+
+Route::middleware('payment-gateway.http')->group(function (): void {
+    Route::middleware(['auth:sanctum', 'verified', 'throttle:payment-gateway.attempt'])
+        ->post('/me/orders/{order}/gateway-attempts', CreateGatewayPaymentAttemptController::class)
+        ->name('me.orders.gateway-attempts.store');
+
+    Route::middleware(['auth:sanctum', 'throttle:payment-gateway.read'])
+        ->get('/me/orders/{order}/gateway-attempts/{attempt}', ShowGatewayPaymentAttemptController::class)
+        ->name('me.orders.gateway-attempts.show');
+});
+
+Route::middleware(['payment-gateway.http', 'throttle:payment-gateway.webhook'])
+    ->post('/webhooks/payments/{provider}', PaymentGatewayWebhookController::class)
+    ->where('provider', '[a-z0-9_-]+')
+    ->name('webhooks.payments.store');

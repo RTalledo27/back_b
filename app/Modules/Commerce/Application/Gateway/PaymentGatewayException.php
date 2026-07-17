@@ -47,4 +47,9 @@ final class PaymentGatewayException extends RuntimeException
     {
         return new self('The gateway settlement conflicts with the commercial payment state.', 1010);
     }
+
+    public static function webhookProcessingFailure(string $message): self
+    {
+        return new self($message, 1011);
+    }
 }

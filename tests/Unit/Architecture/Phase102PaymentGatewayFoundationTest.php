@@ -45,19 +45,20 @@ final class Phase102PaymentGatewayFoundationTest extends TestCase
         }
     }
 
-    public function test_no_public_webhook_controller_or_route_is_registered(): void
+    public function test_only_the_fake_webhook_boundary_controller_or_route_is_registered(): void
     {
         foreach ($this->phpFiles($this->rootPath('routes')) as $file) {
             self::assertDoesNotMatchRegularExpression(
-                '#/webhooks?/payments|webhooks?\\\\payments#i',
+                '/(?:checkout|webhooks?\\/payments\\/(?:stripe|culqi|niubiz)|gateway\\/webhooks)/i',
                 $this->read($file),
                 $file,
             );
         }
 
-        foreach ($this->phpFiles($this->rootPath('app/Modules/Commerce/Presentation/Http/Controllers')) as $file) {
-            self::assertDoesNotMatchRegularExpression('/Webhook|Gateway/i', basename($file), $file);
-        }
+        self::assertFileExists($this->rootPath('app/Modules/Commerce/Presentation/Http/Controllers/PaymentGatewayWebhookController.php'));
+        self::assertFileDoesNotExist($this->rootPath('app/Modules/Commerce/Presentation/Http/Controllers/StripePaymentGatewayController.php'));
+        self::assertFileDoesNotExist($this->rootPath('app/Modules/Commerce/Presentation/Http/Controllers/CulqiPaymentGatewayController.php'));
+        self::assertFileDoesNotExist($this->rootPath('app/Modules/Commerce/Presentation/Http/Controllers/NiubizPaymentGatewayController.php'));
     }
 
     public function test_configuration_is_fake_sandbox_only_and_credentials_are_placeholders(): void

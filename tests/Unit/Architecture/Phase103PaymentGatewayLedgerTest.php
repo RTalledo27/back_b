@@ -18,7 +18,7 @@ use Tests\TestCase;
 final class Phase103PaymentGatewayLedgerTest extends TestCase
 {
     #[Test]
-    public function the_ledger_contract_is_documented_and_has_no_public_webhook_route(): void
+    public function the_ledger_contract_is_documented_and_uses_the_protected_http_boundary(): void
     {
         $documentation = file_get_contents(base_path('docs/phase-10.md'));
 
@@ -28,7 +28,10 @@ final class Phase103PaymentGatewayLedgerTest extends TestCase
         $this->assertStringContainsString('payment_gateway_transactions', $documentation);
         $this->assertStringContainsString('payment_gateway_webhooks', $documentation);
         $this->assertStringContainsString('No se afirma exactly-once', $documentation);
-        $this->assertStringNotContainsString('/webhooks/payments', $this->publicRoutes());
+        $route = Route::getRoutes()->getByName('webhooks.payments.store');
+        $this->assertNotNull($route);
+        $this->assertContains('payment-gateway.http', $route->gatherMiddleware());
+        $this->assertNotContains('auth:sanctum', $route->gatherMiddleware());
     }
 
     #[Test]
@@ -65,7 +68,7 @@ final class Phase103PaymentGatewayLedgerTest extends TestCase
     {
         $migrationPaths = glob(database_path('migrations/*payment_gateway_*.php'));
 
-        $this->assertCount(4, $migrationPaths);
+        $this->assertCount(5, $migrationPaths);
 
         foreach ($migrationPaths as $migrationPath) {
             $source = file_get_contents($migrationPath);

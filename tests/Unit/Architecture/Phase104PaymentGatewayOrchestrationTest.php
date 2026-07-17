@@ -56,13 +56,14 @@ final class Phase104PaymentGatewayOrchestrationTest extends TestCase
     }
 
     #[Test]
-    public function no_public_checkout_or_webhook_route_exists(): void
+    public function no_public_checkout_or_real_provider_webhook_route_exists(): void
     {
         $routes = collect(Route::getRoutes()->getRoutes())
             ->map(static fn ($route): string => $route->methods()[0].' '.$route->uri())
             ->implode("\n");
 
-        $this->assertDoesNotMatchRegularExpression('/checkout|webhooks?\/payments/i', $routes);
+        $this->assertDoesNotMatchRegularExpression('/checkout|webhooks?\/(?:payments\/(?:stripe|culqi|niubiz)|webhooks)/i', $routes);
+        $this->assertNotNull(Route::getRoutes()->getByName('webhooks.payments.store'));
     }
 
     #[Test]

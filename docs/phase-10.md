@@ -416,20 +416,113 @@ replay e idempotencia, dos procesos concurrentes, ausencia de duplicados y
 preservación del flujo manual. El fake continúa siendo el único proveedor y no
 hay endpoint público, checkout, webhook HTTP ni credenciales reales.
 
-## Fase 10.6 — Pendiente de aprobación
+## Fase 10.6 — Durable gateway webhook processing pipeline
 
-La Fase 10.6 queda fuera de este cierre. Cualquier proveedor real, SDK, HTTP
-externo, checkout, webhooks productivos, captura externa, reembolso, cancelación
-o reconciliación requiere una fase independiente y una aprobación explícita.
+Este bloque conecta únicamente el webhook fake ya verificado con el ledger
+durable y el settlement comercial existente. No crea endpoint HTTP público,
+controller, SDK, proveedor real, checkout, redirección ni credenciales reales.
+
+`RecordGatewayWebhookNotificationAction` verifica la firma, normaliza el
+evento y persiste solo metadatos seguros: proveedor, evento, tipo, hash del
+payload, estado, monto, moneda, entorno, `occurred_at`,
+`provider_attempt_id` y `provider_transaction_id`. No se persisten payloads,
+tarjetas, CVV, tokens, secretos ni PII. PostgreSQL deduplica por
+`(provider, provider_event_id)` y un conflicto de metadatos inmutables se
+rechaza de forma estable.
+
+`ProcessGatewayWebhookAction` recibe el UUID durable del webhook, bloquea esa
+fila con `lockForUpdate`, valida firma y metadatos contra
+`PaymentGatewayAttempt`, y registra o reproduce una
+`PaymentGatewayTransaction`. `paid` y `captured` llaman al settlement
+existente; este confirma `Payment`, `Order`, entries, números y el evento
+Outbox ya existente `payment_approved` en la misma transacción. `authorized`,
+`failed` y `expired` solo dejan estado técnico y no rechazan, liberan ni
+modifican Commerce.
+
+El estado técnico se confirma primero. La marca `processed_at` se confirma en
+una transacción posterior, de modo que un fallo entre settlement y marcado es
+recuperable: `applied_at` evita repetir la transición comercial y la
+idempotencia de PostgreSQL evita duplicar la transacción. Los fallos dejan
+`failed_at`, `last_error` seguro y `processing_attempts`; los estados
+desconocidos producen un fallo controlado y no se ocultan. Dos procesos reales
+compitiendo sobre el mismo webhook reutilizan las filas y los locks sin crear
+duplicados.
+
+La entrega posterior sigue siendo responsabilidad del Outbox existente y de
+sus cinco handlers. Este bloque no añade eventos, notificaciones, endpoints ni
+dependencias de Redis. La garantía es de entrega al menos una vez con
+idempotencia durable; no se afirma `exactly-once`.
+
+Las pruebas cubren estados pagado, capturado, autorizado, fallido y expirado,
+replay, conflicto de metadatos, firma inválida, inconsistencias de monto,
+moneda, proveedor y entorno, recuperación después de `applied_at` y dos
+procesos concurrentes. También verifican que el estado comercial, la
+transacción técnica y el Outbox permanezcan coherentes.
+
+## Fase 10.7 — Gateway HTTP boundary con fake provider
+
+Este bloque expone únicamente el boundary HTTP mínimo para probar y operar el
+flujo de pagos con el fake provider. La feature está desactivada por defecto
+mediante `PAYMENT_GATEWAY_HTTP_ENABLED=false`; cuando está desactivada, las
+rutas responden `404`.
+
+El jugador autenticado y con correo verificado puede crear y consultar un
+attempt propio:
+
+* `POST /api/v1/me/orders/{order}/gateway-attempts` requiere
+  `auth:sanctum`, `verified`, `Idempotency-Key` y el proveedor permitido;
+* `GET /api/v1/me/orders/{order}/gateway-attempts/{attempt}` devuelve el
+  attempt únicamente si pertenece al jugador y al order indicado.
+
+La creación toma monto, moneda, `Payment` y demás identificadores del ledger
+interno. El cliente no puede enviar ni alterar esos valores, estados,
+checkout URL o referencias del proveedor. La respuesta Resource solo contiene
+`id`, `provider`, `status`, `amount_cents`, `currency`, `checkout_url` y
+`expires_at`. Un replay idéntico es estable; la misma clave con otro body o
+proveedor produce un conflicto.
+
+El endpoint público de webhook es:
+
+`POST /api/v1/webhooks/payments/{provider}`
+
+No usa Sanctum. Requiere `Content-Type: application/json`, un cuerpo dentro de
+`PAYMENT_GATEWAY_WEBHOOK_MAX_BODY_BYTES`, y los headers
+`X-Gateway-Event-Id`, `X-Gateway-Timestamp` y `X-Gateway-Signature`. La firma
+se verifica sobre el cuerpo HTTP crudo, con tolerancia temporal del fake
+verifier. El provider se resuelve mediante el registry permitido; no hay
+llamadas HTTP externas ni SDK real.
+
+El procesamiento es síncrono en esta fase: registra el webhook, lo procesa y
+solo después devuelve `{"received":true}`. Una firma inválida devuelve `401`,
+un provider desconocido `404`, un replay válido `200`, un conflicto inmutable
+`409` y un fallo interno `500`, siempre con mensajes estables y sin secretos,
+payloads ni detalles internos. El procesamiento se basa en el ledger de
+PostgreSQL y conserva la idempotencia durable del webhook, la transaction y el
+settlement; se trata de una garantía de mejor esfuerzo con reintentos seguros,
+no de `exactly-once`.
+
+Los endpoints usan rate limits separados para creación, lectura y webhook.
+No se añaden Outbox events, notifications ni escrituras adicionales para
+emitir respuestas HTTP. No se implementan WhatsApp, SMS, gateway real,
+frontend, checkout, autenticación adicional ni nuevas capacidades de negocio.
+
+Operación local: activar la feature solo en el entorno de prueba, mantener
+`QUEUE_CONNECTION=database`, ejecutar el worker documentado y usar Mailpit
+para las notificaciones existentes. Un smoke test debe crear un attempt con
+`Idempotency-Key`, enviar un webhook firmado sobre el body exacto, comprobar
+`{"received":true}`, y consultar el order y el payment para verificar el
+settlement. El replay del mismo evento debe ser seguro.
+
+En producción se requiere un secreto gestionado fuera del repositorio,
+HTTPS, límites de cuerpo y rate limits revisados, logs sin PII ni firmas, y
+monitoreo de respuestas `401`, `409` y `500`. Esta fase no afirma entrega
+exacta, disponibilidad de un proveedor real ni recuperación automática ante
+fallos externos. La recuperación se realiza reenviando eventos válidos o
+reprocesando el ledger durable según los procedimientos de las fases 10.3 a
+10.6.
 
 ## 14. Próxima fase y límites
 
-La siguiente fase sujeta a aprobación es la Fase 10.6, después de revisar los
-riesgos, contratos y operación del proveedor que se seleccione.
-
-En Fase 10.5 no se implementan proveedor real, SDK real, HTTP externo, webhook
-productivo, checkout frontend, redirecciones, credenciales reales, captura o
-reembolso del proveedor, nuevas tablas distintas de `applied_at`, nuevos
-eventos Outbox ni cambios en el flujo manual. Las garantías continúan siendo
-las del contrato interno y del fake. No se afirma ejecución exactly-once ni
-entrega externa garantizada.
+La siguiente etapa, sujeta a aprobación, es Fase 10.8 y podrá evaluar un
+proveedor real, checkout, captura externa, reembolso, cancelación y
+reconciliación. No forman parte de esta fase.

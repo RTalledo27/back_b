@@ -23,6 +23,8 @@ use App\Modules\Commerce\Domain\Exceptions\RefundAmountMismatch;
 use App\Modules\Commerce\Domain\Exceptions\RefundNotFound;
 use App\Modules\Commerce\Domain\Exceptions\WinnerEntryNotRefundable;
 use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutNotFound;
+use App\Modules\Commerce\Presentation\Http\Exceptions\GatewayHttpException;
+use App\Modules\Commerce\Presentation\Http\Middleware\EnsurePaymentGatewayHttpEnabled;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\DrawnNumberOutOfRange;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameAlreadyCompleted;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameEngineAutomationActive;
@@ -56,9 +58,19 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => EnsureUserIsAdmin::class,
             'idempotent' => EnsureIdempotencyKeyHeader::class,
             'verified' => EnsureEmailIsVerified::class,
+            'payment-gateway.http' => EnsurePaymentGatewayHttpEnabled::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (GatewayHttpException $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => $e->error,
+                ], $e->status);
+            }
+        });
+
         $exceptions->render(function (InvalidSignatureException $e, Request $request) {
             if ($request->expectsJson()) {
                 return response()->json([

@@ -18,5 +18,8 @@ final readonly class PaymentGatewayWebhookPayload
         public string $payloadHash,
         public CarbonImmutable $occurredAt,
         public bool $signatureVerified,
+        public ?string $providerAttemptId = null,
+        public ?string $providerTransactionId = null,
+        public ?string $environment = null,
     ) {}
 }

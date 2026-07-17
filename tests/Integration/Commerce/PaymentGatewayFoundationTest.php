@@ -13,6 +13,7 @@ use App\Modules\Commerce\Application\Gateway\PaymentGatewayTransactionStatus;
 use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayProvider;
 use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayWebhookNormalizer;
 use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayWebhookVerifier;
+use App\Modules\Commerce\Presentation\Http\Controllers\PaymentGatewayWebhookController;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
@@ -174,14 +175,22 @@ final class PaymentGatewayFoundationTest extends TestCase
         self::assertSame(1, $provider->processedWebhookCount());
     }
 
-    public function test_gateway_foundation_does_not_register_a_public_webhook_route(): void
+    public function test_gateway_http_boundary_uses_only_the_fake_provider_route(): void
     {
+        $route = Route::getRoutes()->getByName('webhooks.payments.store');
+
+        self::assertNotNull($route);
+        self::assertSame(PaymentGatewayWebhookController::class, $route->getAction('controller'));
+        self::assertContains('payment-gateway.http', $route->gatherMiddleware());
+        self::assertSame(['POST'], $route->methods());
+
         $routes = collect(Route::getRoutes()->getRoutes())
-            ->map(fn ($route): string => $route->uri())
+            ->map(fn ($route): string => strtolower($route->uri()))
             ->all();
 
-        self::assertNotContains('api/v1/webhooks/payments/{provider}', $routes);
-        self::assertNotContains('webhooks/payments/{provider}', $routes);
+        self::assertNotContains('api/v1/webhooks/payments/stripe', $routes);
+        self::assertNotContains('api/v1/webhooks/payments/culqi', $routes);
+        self::assertNotContains('api/v1/webhooks/payments/niubiz', $routes);
     }
 
     public function test_manual_commerce_routes_and_outbox_event_types_remain_unchanged(): void

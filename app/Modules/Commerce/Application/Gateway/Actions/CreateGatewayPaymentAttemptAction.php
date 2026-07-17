@@ -41,12 +41,8 @@ final class CreateGatewayPaymentAttemptAction
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $this->assertPayable($request, $order, $payment);
-
-            $provider = $this->providers->get($request->provider);
             $environment = (string) config('payment_gateways.environment', 'sandbox');
             $existing = PaymentGatewayAttempt::query()
-                ->where('provider', $provider->name())
                 ->where('idempotency_key_hash', $request->idempotencyKeyHash)
                 ->lockForUpdate()
                 ->first();
@@ -56,6 +52,10 @@ final class CreateGatewayPaymentAttemptAction
 
                 return GatewayPaymentAttemptResponse::fromModel($existing);
             }
+
+            $provider = $this->providers->get($request->provider);
+
+            $this->assertPayable($request, $order, $payment);
 
             $providerResult = $provider->createAttempt(new PaymentGatewayCreateAttemptData(
                 orderId: $order->id,

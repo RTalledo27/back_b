@@ -236,6 +236,33 @@ class AppServiceProvider extends ServiceProvider
                     'error' => 'too_many_requests',
                 ], 429, $headers));
         });
+
+        RateLimiter::for('payment-gateway.attempt', function (Request $request): Limit {
+            return Limit::perMinute(10)
+                ->by('payment-gateway.attempt:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many gateway requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('payment-gateway.read', function (Request $request): Limit {
+            return Limit::perMinute(60)
+                ->by('payment-gateway.read:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many gateway requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('payment-gateway.webhook', function (Request $request): Limit {
+            return Limit::perMinute(30)
+                ->by('payment-gateway.webhook:'.$request->ip().':'.(string) $request->route('provider'))
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many gateway requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
     }
 
     private function authThrottleKey(Request $request, string $prefix): string

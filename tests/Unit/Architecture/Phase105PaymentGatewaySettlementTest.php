@@ -58,7 +58,7 @@ final class Phase105PaymentGatewaySettlementTest extends TestCase
         $routes = $this->read(__DIR__.'/../../../routes/api.php');
         $providerDirectory = self::APP.'/Modules/Commerce/Infrastructure/Gateway';
 
-        $this->assertDoesNotMatchRegularExpression('/(checkout|webhooks\/payments|gateway\/webhooks)/i', $routes);
+        $this->assertDoesNotMatchRegularExpression('/(checkout|webhooks\/payments\/(?:stripe|culqi|niubiz)|gateway\/webhooks)/i', $routes);
         $this->assertDirectoryExists($providerDirectory);
         $this->assertFileDoesNotExist($providerDirectory.'/CulqiPaymentGatewayProvider.php');
         $this->assertFileDoesNotExist($providerDirectory.'/NiubizPaymentGatewayProvider.php');

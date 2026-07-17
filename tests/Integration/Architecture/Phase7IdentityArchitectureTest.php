@@ -25,7 +25,7 @@ use PHPUnit\Framework\TestCase;
  * 12. verified is registered only as an alias, never as a global middleware.
  * 13. No 2FA/SMS/phone/magic-link files exist in auth directories.
  * 14. AuthUserResource contains no Eloquent queries.
- * 15. verified is applied only to the two commerce write endpoints.
+ * 15. verified is applied only to the three commerce write endpoints.
  */
 final class Phase7IdentityArchitectureTest extends TestCase
 {
@@ -386,9 +386,13 @@ final class Phase7IdentityArchitectureTest extends TestCase
         $content = file_get_contents($routesPath) ?: '';
 
         $this->assertSame(
-            2,
+            3,
             substr_count($content, "'verified'"),
-            "The 'verified' middleware must appear in routes/api.php exactly twice — only for reservations and payment-evidence POST endpoints.",
+            "The 'verified' middleware must appear in routes/api.php exactly three times — only for reservations, payment-evidence and gateway-attempt POST endpoints.",
+        );
+        $this->assertStringContainsString(
+            "Route::middleware(['auth:sanctum', 'verified', 'throttle:payment-gateway.attempt'])",
+            $content,
         );
     }
 }

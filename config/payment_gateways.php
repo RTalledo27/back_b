@@ -15,7 +15,9 @@ return [
     */
     'provider' => env('PAYMENT_GATEWAY_PROVIDER', 'fake'),
     'environment' => env('PAYMENT_GATEWAY_ENV', 'sandbox'),
+    'http_enabled' => (bool) env('PAYMENT_GATEWAY_HTTP_ENABLED', false),
     'webhook_tolerance_seconds' => (int) env('PAYMENT_GATEWAY_WEBHOOK_TOLERANCE_SECONDS', 300),
+    'webhook_max_body_bytes' => (int) env('PAYMENT_GATEWAY_WEBHOOK_MAX_BODY_BYTES', 65536),
 
     'credentials' => [
         'public_key' => env('PAYMENT_GATEWAY_PUBLIC_KEY'),

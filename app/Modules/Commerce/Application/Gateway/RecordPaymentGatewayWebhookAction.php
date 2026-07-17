@@ -23,6 +23,14 @@ final class RecordPaymentGatewayWebhookAction
                 'event_type' => $data->eventType,
                 'signature_verified' => $data->signatureVerified,
                 'payload_hash' => $data->payloadHash,
+                'provider_attempt_id' => $data->providerAttemptId,
+                'provider_transaction_id' => $data->providerTransactionId,
+                'normalized_status' => $data->normalizedStatus?->value,
+                'amount_cents' => $data->amountCents,
+                'currency' => $data->currency,
+                'environment' => $data->environment,
+                'occurred_at' => $data->occurredAt,
+                'processing_attempts' => 0,
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
@@ -49,6 +57,13 @@ final class RecordPaymentGatewayWebhookAction
     {
         return $webhook->event_type === $data->eventType
             && $webhook->signature_verified === $data->signatureVerified
-            && $webhook->payload_hash === $data->payloadHash;
+            && $webhook->payload_hash === $data->payloadHash
+            && $webhook->provider_attempt_id === $data->providerAttemptId
+            && $webhook->provider_transaction_id === $data->providerTransactionId
+            && $webhook->normalized_status === $data->normalizedStatus?->value
+            && $webhook->amount_cents === $data->amountCents
+            && $webhook->currency === $data->currency
+            && $webhook->environment === $data->environment
+            && ($webhook->occurred_at?->equalTo($data->occurredAt) ?? $data->occurredAt === null);
     }
 }
