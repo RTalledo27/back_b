@@ -521,8 +521,156 @@ fallos externos. La recuperación se realiza reenviando eventos válidos o
 reprocesando el ledger durable según los procedimientos de las fases 10.3 a
 10.6.
 
-## 14. Próxima fase y límites
+## Fase 10.8 — Cierre y hardening final del gateway fake
 
-La siguiente etapa, sujeta a aprobación, es Fase 10.8 y podrá evaluar un
-proveedor real, checkout, captura externa, reembolso, cancelación y
-reconciliación. No forman parte de esta fase.
+Fase 10.8 cierra la superficie implementada en 10.1–10.7 mediante auditoría,
+guards de arquitectura, documentación operativa y pruebas reproducibles. No
+agrega lógica comercial ni nuevos estados de negocio. El único provider
+registrado continúa siendo `fake`, ubicado en Infrastructure; Application
+depende de `PaymentGatewayProvider` y no conoce implementaciones concretas.
+
+### Arquitectura y límites finales
+
+La cadena vigente es:
+
+```text
+HTTP create attempt
+→ fake provider
+→ attempt ledger
+→ signed webhook HTTP
+→ webhook ledger
+→ gateway transaction
+→ settlement
+→ Payment approved
+→ Order paid
+→ entries/números confirmados
+→ payment_approved Outbox
+→ NotificationDelivery
+→ queued email
+```
+
+La API queda limitada a:
+
+* `POST /api/v1/me/orders/{order}/gateway-attempts`;
+* `GET /api/v1/me/orders/{order}/gateway-attempts/{attempt}`;
+* `POST /api/v1/webhooks/payments/{provider}`.
+
+La feature flag `PAYMENT_GATEWAY_HTTP_ENABLED=false` permanece apagada por
+defecto. Los endpoints del jugador requieren `auth:sanctum`, ownership y,
+para crear un intento, `verified`, `Idempotency-Key` y rate limit. El webhook
+no usa Sanctum, pero sí la feature flag, provider allowlist, `Content-Type`,
+límite de cuerpo, timestamp, tolerancia y firma sobre el body HTTP exacto.
+No existen checkout, redirect, listado global, endpoints administrativos de
+gateway, refund/cancel externo ni endpoints de notificaciones.
+
+### Ledger, settlement e idempotencia
+
+`payment_gateway_attempts`, `payment_gateway_transactions` y
+`payment_gateway_webhooks` son el registro técnico durable. No guardan tarjeta,
+CVV, tokens, secretos, firma completa, datos bancarios ni raw payload; solo
+referencias mínimas y hashes operativos donde corresponde. `applied_at` marca
+que una transacción técnica ya aplicó el settlement comercial.
+
+El settlement solo aplica a `paid` y `captured`. `authorized` registra estado
+técnico sin aprobar `Payment`; `failed` registra estado técnico sin llamar
+`RejectPaymentAction`, sin rechazar ni liberar reservas; `expired` tampoco
+expira `Order` ni libera reservas. Un estado desconocido falla de forma
+controlada, no muta Commerce y deja un error seguro en el ledger cuando
+corresponde.
+
+La creación de attempts usa provider más hash de idempotencia y fingerprint.
+La transacción usa provider más provider transaction ID y el webhook usa
+provider más provider event ID. `applied_at`, locks PostgreSQL y las
+constraints únicas permiten repetir operaciones válidas sin duplicar Payment,
+Order, entries, números, gateway transactions, webhooks ni
+`payment_approved`. La garantía real es **at-least-once con idempotencia
+durable**. No se afirma `exactly-once`.
+
+La transición comercial compartida es
+`ApplyApprovedPaymentTransitionAction`: `ApprovePaymentAction` la usa con
+`origin: manual` y `SettleGatewayPaidTransactionAction` con `origin: gateway`.
+El camino gateway no inventa un reviewer y no realiza llamadas externas dentro
+de la transacción. El orden canónico de locks comerciales permanece:
+
+```text
+Game → Order → Payment → OrderItems → NumberReservations → GameNumbers
+```
+
+La aprobación y el único evento Outbox `payment_approved` se confirman dentro
+de la misma transacción. El Outbox conserva exactamente sus cinco tipos
+existentes y sus handlers de notificación; no se agregan eventos ni handlers
+gateway. Notification handlers y Domain Notifications siguen siendo los
+responsables del email queued. La entrega continúa siendo best-effort dentro
+de la garantía at-least-once del Outbox.
+
+### Seguridad y observabilidad
+
+El boundary devuelve errores estables (`401`, `404`, `409`, `422` o `500`)
+sin payloads, firmas, secretos, tokens ni stack traces. Los logs operativos
+solo pueden usar identificadores técnicos seguros; no se registra body crudo,
+firma completa, secret o token. No existen SDKs Culqi, Niubiz o Stripe,
+credenciales reales ni HTTP saliente.
+
+En local, `QUEUE_CONNECTION=database`, `MAIL_HOST=mailpit` y el worker
+documentado procesan el Outbox y la cola. Mailpit permite comprobar el correo
+sin proveedor SMTP real. En producción se requiere HTTPS, un secret manager,
+rotación y revisión de rate limits; ningún secreto debe entrar en el
+repositorio o en comandos de diagnóstico.
+
+### Smoke test reproducible
+
+El smoke test usa únicamente el fake y los endpoints existentes; no crea
+seeds, comandos ni rutas especiales:
+
+1. En el entorno local de prueba, activar temporalmente
+   `PAYMENT_GATEWAY_HTTP_ENABLED=true` y ejecutar `php artisan optimize:clear`.
+2. Autenticar un usuario con email verificado y crear un `Order` y sus
+   reservas mediante el flujo existente.
+3. Enviar el create attempt con un `Idempotency-Key`; conservar solo la
+   referencia fake devuelta por la API.
+4. Construir el webhook fake firmado con el body exacto y enviarlo a
+   `POST /api/v1/webhooks/payments/fake`.
+5. Comprobar en PostgreSQL el webhook ledger, la gateway transaction, su
+   `applied_at`, `Payment approved`, `Order paid`, entries/números confirmados
+   y un solo `payment_approved` en Outbox.
+6. Ejecutar el worker de Outbox/queue y comprobar el correo en Mailpit.
+7. Reenviar el mismo webhook y verificar que no aparecen duplicados.
+8. Restaurar `PAYMENT_GATEWAY_HTTP_ENABLED=false` y ejecutar
+   `php artisan optimize:clear`.
+
+La ejecución automatizada equivalente, con PostgreSQL aislado, es:
+
+```powershell
+.\scripts\test-backend.ps1 -Compact -Path tests/Feature/Commerce/PaymentGatewayHttpBoundaryTest.php
+.\scripts\test-backend.ps1 -Compact -Path tests/Integration/Commerce/PaymentGatewayHttpPipelineIntegrationTest.php
+.\scripts\test-backend.ps1 -Compact -Path tests/Integration/Commerce/PaymentGatewayWebhookProcessingTest.php
+.\scripts\test-backend.ps1 -Compact -Path tests/Integration/Commerce/PaymentGatewaySettlementTest.php
+```
+
+El runner crea una base `backend_rifas_app_test_<token>` por ejecución y la
+elimina al finalizar. No debe usarse una base compartida, una suite paralela
+ni un XML temporal.
+
+### Límites y trabajo futuro
+
+Fase 10.8 no implementa proveedor real, SDK, HTTP saliente, credenciales
+reales, frontend, checkout/redirect, refund/cancel externo, auto-reject,
+liberación automática por `failed` o `expired`, reconciliación externa,
+WhatsApp, SMS, panel administrativo ni nuevas notificaciones.
+
+Un bloque futuro, sujeto a aprobación independiente, podrá evaluar la
+selección de proveedor, adapter y sandbox reales, firma real de webhooks,
+secret manager, checkout, refunds/cancellations, reconciliación,
+observabilidad, políticas para `failed`/`expired`, go-live y rollback. No se
+asigna número de fase a esa integración.
+
+## 15. Garantías reales de Fase 10
+
+Fase 10 ofrece un provider fake sustituible, ledger PostgreSQL durable,
+procesamiento de webhook idempotente, settlement comercial protegido por
+locks, Outbox `payment_approved` atómico y una frontera HTTP desactivada por
+defecto. Ofrece recuperación mediante replay seguro y reintentos del ledger.
+
+No ofrece exactly-once, entrega garantizada de email o webhook, disponibilidad
+de proveedor externo, checkout real, refunds/cancellations externos,
+reconciliación ni liberación automática para estados técnicos no pagados.
