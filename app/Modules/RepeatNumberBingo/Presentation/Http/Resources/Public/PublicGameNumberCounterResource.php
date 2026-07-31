@@ -10,7 +10,7 @@ use Illuminate\Http\Resources\Json\JsonResource;
 final class PublicGameNumberCounterResource extends JsonResource
 {
     /**
-     * @return array{number: int, hits_count: int, last_draw_sequence: ?int}
+     * @return array{number: int, hits_count: int, last_draw_sequence: ?int, state: string}
      */
     public function toArray(Request $request): array
     {
@@ -23,6 +23,7 @@ final class PublicGameNumberCounterResource extends JsonResource
             'last_draw_sequence' => $row->last_draw_sequence !== null
                 ? (int) $row->last_draw_sequence
                 : null,
+            'state' => (string) ($row->public_state ?? 'active'),
         ];
     }
 }

@@ -160,12 +160,12 @@ final class DrawGameNumberActionTest extends TestCase
         $this->assertSame(4, $counterForThree->last_draw_sequence);
     }
 
-    public function test_unowned_audit_fires_exactly_once_when_threshold_is_reached(): void
+    public function test_unowned_number_is_retired_after_reaching_threshold(): void
     {
         [$game, $admin] = $this->makeRunningGame(hitsRequired: 5);
-        $action = $this->actWithSequence([2, 2, 2, 2, 2, 2, 2]); // 7 draws of number 2
+        $action = $this->actWithSequence([2, 2, 2, 2, 2, 2, 3]);
 
-        for ($i = 0; $i < 7; $i++) {
+        for ($i = 0; $i < 6; $i++) {
             $action->execute(new DrawGameNumberData($game->id, $this->commandId(), $admin->id));
         }
 
@@ -179,8 +179,24 @@ final class DrawGameNumberActionTest extends TestCase
             'Unowned-threshold audit must fire only on the exact equality.',
         );
 
-        $counter = GameNumberCounter::query()->where('game_id', $game->id)->firstOrFail();
-        $this->assertSame(7, $counter->hits_count);
+        $counter = GameNumberCounter::query()
+            ->where('game_id', $game->id)
+            ->where('game_number_id', GameNumber::query()
+                ->where('game_id', $game->id)
+                ->where('number', 2)
+                ->value('id'))
+            ->firstOrFail();
+        $this->assertSame(5, $counter->hits_count);
+        $this->assertSame(
+            1,
+            GameNumberCounter::query()
+                ->where('game_id', $game->id)
+                ->where('game_number_id', GameNumber::query()
+                    ->where('game_id', $game->id)
+                    ->where('number', 3)
+                    ->value('id'))
+                ->value('hits_count'),
+        );
     }
 
     public function test_reserved_number_in_running_game_aborts_by_integrity(): void

@@ -14,8 +14,9 @@ interface DrawNumberStrategy
     /**
      * @param  int  $minimum  inclusive lower bound (>= 1)
      * @param  int  $maximum  inclusive upper bound (>= $minimum)
+     * @param  list<int>  $excluded  numbers that are no longer eligible
      */
-    public function generate(int $minimum, int $maximum): int;
+    public function generate(int $minimum, int $maximum, array $excluded = []): int;
 
     /**
      * Stable identifier persisted into game_draws.strategy.

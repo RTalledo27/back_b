@@ -21,7 +21,7 @@ final class CryptographicallySecureDrawNumberStrategy implements DrawNumberStrat
 {
     public const NAME = 'crypto_secure';
 
-    public function generate(int $minimum, int $maximum): int
+    public function generate(int $minimum, int $maximum, array $excluded = []): int
     {
         if ($minimum > $maximum) {
             throw new InvalidArgumentException(
@@ -29,7 +29,13 @@ final class CryptographicallySecureDrawNumberStrategy implements DrawNumberStrat
             );
         }
 
-        return random_int($minimum, $maximum);
+        $candidates = array_values(array_diff(range($minimum, $maximum), $excluded));
+
+        if ($candidates === []) {
+            throw new InvalidArgumentException('No eligible numbers remain in the draw range.');
+        }
+
+        return $candidates[random_int(0, count($candidates) - 1)];
     }
 
     public function name(): string

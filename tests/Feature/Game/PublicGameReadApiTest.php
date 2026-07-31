@@ -121,6 +121,12 @@ final class PublicGameReadApiTest extends TestCase
             'winning_hits' => 5,
             'won_at' => $completedAt,
         ]);
+        GameNumberCounter::create([
+            'game_id' => $game->id,
+            'game_number_id' => $number->id,
+            'hits_count' => 5,
+            'last_draw_sequence' => $draw->sequence,
+        ]);
 
         $winner = $this->getJson('/api/v1/public/games/completed-public')
             ->assertOk()
@@ -135,6 +141,9 @@ final class PublicGameReadApiTest extends TestCase
 
         $this->assertSame(['number', 'draw_sequence', 'hits', 'won_at'], array_keys($winner));
         $this->assertStringNotContainsString($user->email, json_encode($winner, JSON_THROW_ON_ERROR));
+
+        $this->getJson('/api/v1/public/games/completed-public/number-counters')
+            ->assertJsonPath('data.0.state', 'winner');
     }
 
     public function test_private_cancelled_and_missing_games_return_the_same_404(): void
@@ -179,6 +188,7 @@ final class PublicGameReadApiTest extends TestCase
             'slug' => 'public-counters',
             'number_min' => 1,
             'number_max' => 3,
+            'hits_required' => 2,
         ]);
         $numberThree = $this->createNumber($game, 3);
         $numberOne = $this->createNumber($game, 1);
@@ -203,16 +213,19 @@ final class PublicGameReadApiTest extends TestCase
                 'number' => 1,
                 'hits_count' => 1,
                 'last_draw_sequence' => 1,
+                'state' => 'active',
             ])
             ->assertJsonPath('data.1', [
                 'number' => 2,
                 'hits_count' => 0,
                 'last_draw_sequence' => null,
+                'state' => 'active',
             ])
             ->assertJsonPath('data.2', [
                 'number' => 3,
                 'hits_count' => 2,
                 'last_draw_sequence' => 4,
+                'state' => 'not_eligible',
             ]);
     }
 

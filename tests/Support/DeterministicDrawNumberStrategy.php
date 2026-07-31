@@ -28,21 +28,23 @@ final class DeterministicDrawNumberStrategy implements DrawNumberStrategy
         $this->remaining = array_values($sequence);
     }
 
-    public function generate(int $minimum, int $maximum): int
+    public function generate(int $minimum, int $maximum, array $excluded = []): int
     {
-        if ($this->remaining === []) {
-            throw new LogicException('DeterministicDrawNumberStrategy exhausted.');
+        while ($this->remaining !== []) {
+            $next = array_shift($this->remaining);
+            if ($next < $minimum || $next > $maximum) {
+                throw new LogicException(sprintf(
+                    'Deterministic value %d outside the requested [%d, %d] range.',
+                    $next, $minimum, $maximum,
+                ));
+            }
+
+            if (! in_array($next, $excluded, true)) {
+                return $next;
+            }
         }
 
-        $next = array_shift($this->remaining);
-        if ($next < $minimum || $next > $maximum) {
-            throw new LogicException(sprintf(
-                'Deterministic value %d outside the requested [%d, %d] range.',
-                $next, $minimum, $maximum,
-            ));
-        }
-
-        return $next;
+        throw new LogicException('DeterministicDrawNumberStrategy exhausted.');
     }
 
     public function name(): string

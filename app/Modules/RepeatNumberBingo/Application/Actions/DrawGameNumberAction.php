@@ -165,8 +165,15 @@ final class DrawGameNumberAction
         // 5. Sequence under the Game lock — game_draws is the source of truth.
         $sequence = (int) (DB::table('game_draws')->where('game_id', $game->id)->max('sequence') ?? 0) + 1;
 
-        // 6. Generate the number.
-        $drawnNumber = $this->drawStrategy->generate($game->number_min, $game->number_max);
+        // 6. Generate only from numbers that can still participate. A number
+        // without a confirmed entry is retired after reaching the threshold;
+        // its history remains canonical, but it must not be drawn again.
+        $retiredUnownedNumbers = $this->retiredUnownedNumbers($game);
+        $drawnNumber = $this->drawStrategy->generate(
+            $game->number_min,
+            $game->number_max,
+            $retiredUnownedNumbers,
+        );
 
         if ($drawnNumber < $game->number_min || $drawnNumber > $game->number_max) {
             throw DrawnNumberOutOfRange::for($drawnNumber, $game->number_min, $game->number_max);
@@ -317,6 +324,22 @@ final class DrawGameNumberAction
         ]);
 
         return $result;
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function retiredUnownedNumbers(Game $game): array
+    {
+        return DB::table('game_number_counters AS gnc')
+            ->join('game_numbers AS gn', 'gn.id', '=', 'gnc.game_number_id')
+            ->where('gnc.game_id', $game->id)
+            ->where('gn.status', GameNumberStatus::Available->value)
+            ->where('gnc.hits_count', '>=', $game->hits_required)
+            ->orderBy('gn.number')
+            ->pluck('gn.number')
+            ->map(static fn (mixed $number): int => (int) $number)
+            ->all();
     }
 
     /**

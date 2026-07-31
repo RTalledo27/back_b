@@ -20,8 +20,12 @@ final class ListGameNumberCountersQuery
      * @param  array{number_from?: int, number_to?: int, min_hits?: int, max_hits?: int, status?: GameNumberStatus|string}  $filters
      * @return LengthAwarePaginator<int, \stdClass>
      */
-    public function paginate(string $gameId, array $filters, int $perPage = 50): LengthAwarePaginator
-    {
+    public function paginate(
+        string $gameId,
+        array $filters,
+        int $perPage = 50,
+        ?int $hitsRequired = null,
+    ): LengthAwarePaginator {
         $perPage = max(1, min(100, $perPage));
 
         $query = DB::table('game_numbers AS gn')
@@ -37,6 +41,22 @@ final class ListGameNumberCountersQuery
                 DB::raw('COALESCE(gnc.hits_count, 0) AS hits_count'),
                 'gnc.last_draw_sequence AS last_draw_sequence',
             ]);
+
+        if ($hitsRequired !== null) {
+            $threshold = max(1, $hitsRequired);
+            $query->addSelect(DB::raw(
+                "CASE
+                    WHEN COALESCE(gnc.hits_count, 0) < {$threshold} THEN 'active'
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM game_winners AS gw
+                        WHERE gw.game_id = gn.game_id
+                          AND gw.game_number_id = gn.id
+                    ) THEN 'winner'
+                    ELSE 'not_eligible'
+                END AS public_state",
+            ));
+        }
 
         if (isset($filters['number_from'])) {
             $query->where('gn.number', '>=', (int) $filters['number_from']);

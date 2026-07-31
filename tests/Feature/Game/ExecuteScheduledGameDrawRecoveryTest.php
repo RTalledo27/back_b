@@ -97,7 +97,7 @@ final class ExecuteScheduledGameDrawRecoveryTest extends TestCase
         $tick = $this->tick($game);
         $this->app->instance(DrawNumberStrategy::class, new class implements DrawNumberStrategy
         {
-            public function generate(int $minimum, int $maximum): int
+            public function generate(int $minimum, int $maximum, array $excluded = []): int
             {
                 throw new RuntimeException('temporary draw source failure');
             }

@@ -25,8 +25,16 @@ final class ListPublicGameNumberCountersController
             throw new NotFoundHttpException('Game not found.');
         }
 
+        // The state is a public outcome classification, not payment or
+        // ownership data. It tells the board whether a number remains
+        // eligible, reached the threshold without participation, or won.
         return PublicGameNumberCounterResource::collection(
-            $countersQuery->paginate($game->getKey(), [], (int) $request->query('per_page', '50')),
+            $countersQuery->paginate(
+                $game->getKey(),
+                [],
+                (int) $request->query('per_page', '50'),
+                (int) $game->hits_required,
+            ),
         );
     }
 }

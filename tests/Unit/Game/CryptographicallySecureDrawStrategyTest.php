@@ -28,6 +28,23 @@ final class CryptographicallySecureDrawStrategyTest extends TestCase
         }
     }
 
+    public function test_excluded_numbers_are_not_selected(): void
+    {
+        $strategy = new CryptographicallySecureDrawNumberStrategy;
+
+        for ($i = 0; $i < 200; $i++) {
+            $value = $strategy->generate(1, 3, [2, 3]);
+            $this->assertSame(1, $value);
+        }
+    }
+
+    public function test_all_excluded_numbers_are_rejected(): void
+    {
+        $strategy = new CryptographicallySecureDrawNumberStrategy;
+        $this->expectException(InvalidArgumentException::class);
+        $strategy->generate(1, 2, [1, 2]);
+    }
+
     public function test_inverted_range_is_rejected(): void
     {
         $strategy = new CryptographicallySecureDrawNumberStrategy;
