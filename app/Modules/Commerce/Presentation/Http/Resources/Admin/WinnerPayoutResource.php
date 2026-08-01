@@ -36,7 +36,7 @@ final class WinnerPayoutResource extends JsonResource
             'amount_cents' => $r->amountCents,
             'currency' => $r->currency,
             'method' => $r->method,
-            'external_reference' => $r->externalReference,
+            'external_reference' => $this->mask($r->externalReference),
             'notes' => $r->notes,
             'processed_by_user_id' => $r->actorUserId,
             'processed_at' => $r->processedAt,
@@ -50,5 +50,16 @@ final class WinnerPayoutResource extends JsonResource
             ],
             'was_already_processed' => $r->wasAlreadyProcessed,
         ];
+    }
+
+    private function mask(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return $value;
+        }
+
+        $value = trim($value);
+
+        return strlen($value) <= 4 ? '****' : '****'.substr($value, -4);
     }
 }

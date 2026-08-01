@@ -6,6 +6,7 @@ namespace App\Modules\Commerce\Domain\Models;
 
 use App\Models\User;
 use App\Modules\Shared\Domain\Exceptions\ImmutableModelException;
+use App\Modules\Commerce\Domain\Models\WinnerPayoutExecutionAttempt;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,6 +17,8 @@ use Illuminate\Support\Carbon;
  *
  * @property string $id
  * @property string $payout_id
+ * @property string|null $execution_attempt_id
+ * @property string $document_type
  * @property string $disk
  * @property string $path
  * @property string $original_filename
@@ -63,6 +66,12 @@ class WinnerPayoutDocument extends Model
     public function payout(): BelongsTo
     {
         return $this->belongsTo(WinnerPayout::class, 'payout_id');
+    }
+
+    /** @return BelongsTo<WinnerPayoutExecutionAttempt, $this> */
+    public function executionAttempt(): BelongsTo
+    {
+        return $this->belongsTo(WinnerPayoutExecutionAttempt::class, 'execution_attempt_id');
     }
 
     /**

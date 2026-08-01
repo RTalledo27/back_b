@@ -695,15 +695,12 @@ identidad, no recepción del dinero.
 
 ### 11.3 — Payout manual con dual control
 
-- **Objetivo:** separar maker, checker y tesorería.
-- **Alcance:** estados, permisos, aprobación, ejecución manual y evidencia
-  append-only.
-- **Endpoints probables:** crear, enviar, aprobar, rechazar y marcar
-  procesamiento/pago.
-- **Eventos:** audit trail y Outbox privado solo si el contrato lo aprueba.
-- **Tests:** self-approval, concurrencia, idempotencia, transiciones y storage.
-- **Límites:** no proveedor automático ni datos bancarios innecesarios.
-- **Cierre:** ningún `paid` sin aprobación, ejecución y evidencia.
+La Fase 11.3 está implementada. El agregado `WinnerPayout` conserva los
+registros históricos como `legacy_registered` y controla el flujo nuevo
+`draft -> awaiting_approval -> approved -> processing -> paid`, con
+`failed` y `cancelled` según las reglas documentadas al final de este
+archivo. No existe proveedor automático, Outbox nuevo ni confirmación
+financiera del ganador.
 
 ### 11.4 — Winner confirmation, reconciliation y disputes
 
@@ -760,3 +757,112 @@ transparencia pública ni imparcialidad verificable por commit-reveal.
 No se afirma exactly-once, entrega garantizada de correo, entrega bancaria
 garantizada ni payout automático. No existe payout automático implementado.
 No existe seed pública ni commit-reveal implementado.
+
+## Fase 11.3 — Payout manual con dual control
+
+La Fase 11.3 implementa el registro y la ejecución manual del pago del
+ganador, sin gateway ni transferencia automática. El agregado histórico
+`WinnerPayout` se conserva como única fuente del registro de payout; no se
+crea un segundo agregado paralelo.
+
+### Estados y compatibilidad histórica
+
+Los estados actuales son:
+
+```text
+legacy_registered, draft, awaiting_approval, approved, processing, paid,
+failed, cancelled
+```
+
+Los registros existentes se clasifican como `legacy_registered`. Ese estado
+significa que el pago fue registrado por el flujo anterior; no demuestra que
+haya sido aprobado, ejecutado ni recibido. Un registro histórico se conserva
+para lectura y no se puede editar ni marcar como `paid` mediante el flujo
+nuevo. El endpoint histórico de escritura no permite crear pagos nuevos sin
+dual control.
+
+`legacy_registered != paid` y `paid != received`: el flujo registra una
+ejecución administrativa con evidencia, pero no confirma la recepción efectiva
+por el ganador.
+
+Las transiciones nuevas son:
+
+```text
+draft -> awaiting_approval -> approved -> processing -> paid
+                         \-> draft
+processing -> failed -> processing
+draft|awaiting_approval|approved|failed -> cancelled
+```
+
+El estado `disputed` y la conciliación financiera pertenecen a la Fase 11.4.
+
+### Precondiciones y datos monetarios
+
+La creación administrativa exige juego `completed`, ganador único, claim en
+estado `verified`, funding en estado `reserved` y coincidencia exacta de
+`prize_cents` y `currency` entre `Game` y `GamePrizeFunding`. El backend
+toma el importe y la moneda de `Game`; el request no puede sustituirlos.
+Solo puede existir un payout activo por ganador.
+
+El destino usa una fila versionada e inmutable por payout. Los métodos
+permitidos son `bank_transfer`, `yape`, `plin`, `cash` y `other`. El
+payload se guarda cifrado, se devuelve únicamente con una máscara y no acepta
+credenciales, tokens, PIN, CVV ni secretos.
+
+Cada inicio de ejecución crea un `WinnerPayoutExecutionAttempt` append-only
+con número secuencial, destino versionado, actor, huella de idempotencia y
+estado. Un reintento después de `failed` crea otro intento; no se reutiliza
+ni se edita el anterior. `paid` exige un intento `processing`, referencia
+externa y documento de evidencia privado con MIME detectado por el servidor,
+tamaño y SHA-256. La evidencia de ejecución queda vinculada al intento.
+
+### Dual control, auditoría y concurrencia
+
+El creador del payout no puede aprobarlo ni ejecutar su pago. Cada operación
+de transición registra un evento append-only en `winner_payout_events`, con
+actor, estados, código de razón, correlación y metadata segura sin PII.
+Los modelos de destino, intento, documento y evento no permiten actualización
+ni eliminación fuera de sus cambios de ciclo de vida explícitos.
+
+Las acciones controlan sus propias transacciones y bloquean primero `Game` al
+crear el payout; luego bloquean funding, ganador, claim y payout según la
+operación. Las transiciones bloquean el payout y el intento actual. Los
+índices únicos y las huellas de `Idempotency-Key` protegen replay y
+concurrencia. La política es idempotencia best-effort y comportamiento
+at-least-once; no se afirma exactly-once.
+
+### API administrativa
+
+```text
+GET   /api/v1/admin/winner-payouts
+GET   /api/v1/admin/winner-payouts/{payout}
+POST  /api/v1/admin/games/{game}/winner-payouts
+PATCH /api/v1/admin/winner-payouts/{payout}
+POST  /api/v1/admin/winner-payouts/{payout}/submit
+POST  /api/v1/admin/winner-payouts/{payout}/approve
+POST  /api/v1/admin/winner-payouts/{payout}/reject
+POST  /api/v1/admin/winner-payouts/{payout}/mark-processing
+POST  /api/v1/admin/winner-payouts/{payout}/mark-paid
+POST  /api/v1/admin/winner-payouts/{payout}/mark-failed
+POST  /api/v1/admin/winner-payouts/{payout}/cancel
+GET   /api/v1/admin/winner-payouts/{payout}/documents/{payoutDocument}
+```
+
+Las lecturas son administrativas. Las mutaciones requieren `auth:sanctum`,
+rol administrativo e `Idempotency-Key`. Las respuestas exponen estados,
+actores, fechas UTC, importes y metadata segura; nunca exponen rutas,
+discos, hashes completos, payload cifrado, credenciales ni PII innecesaria.
+
+### Operación y límites
+
+La operación manual recomendada es: verificar claim, reservar funding, crear
+el payout, enviar a aprobación, aprobar con otro administrador, iniciar el
+intento, ejecutar fuera del sistema y marcar `paid` con referencia y
+evidencia. Si la ejecución falla, se registra la razón y se permite un nuevo
+intento. No hay gateway, transferencia bancaria, Yape, Plin, webhook ni
+confirmación de recepción en esta fase.
+
+El correo y Outbox existentes no se amplían con eventos nuevos. El estado
+`paid` demuestra que un administrador registró una ejecución con evidencia;
+no demuestra por sí solo que el ganador haya recibido el dinero. La
+confirmación, disputa y conciliación quedan para 11.4.

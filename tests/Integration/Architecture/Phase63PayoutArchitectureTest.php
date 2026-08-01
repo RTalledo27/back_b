@@ -11,7 +11,7 @@ use PHPUnit\Framework\TestCase;
  * Grep-based — no DB or Laravel boot needed.
  *
  * Key invariants:
- *  1. Only ProcessWinnerPayoutAction writes to winner_payouts (WinnerPayout::create)
+ *  1. Legacy and dual-control creation Actions are the only writers to winner_payouts
  *  2. ProcessWinnerPayoutAction does not use IdempotentCommandExecutor or idempotency_keys
  *  3. ProcessWinnerPayoutAction does not catch UniqueConstraintViolationException
  *  4. ProcessWinnerPayoutAction does not expose disk/path/sha256 in GameEvent payload
@@ -61,7 +61,7 @@ final class Phase63PayoutArchitectureTest extends TestCase
         $offenders = [];
 
         foreach ($this->phpFilesUnder(self::ACTION_ROOT) as $file) {
-            if (basename($file) === 'ProcessWinnerPayoutAction.php') {
+            if (in_array(basename($file), ['ProcessWinnerPayoutAction.php', 'CreateWinnerPayoutAction.php'], true)) {
                 continue;
             }
             $content = file_get_contents($file) ?: '';
@@ -73,7 +73,7 @@ final class Phase63PayoutArchitectureTest extends TestCase
         $this->assertSame(
             [],
             $offenders,
-            'Only ProcessWinnerPayoutAction may call WinnerPayout::create.',
+            'Only the legacy or dual-control creation Action may call WinnerPayout::create.',
         );
     }
 

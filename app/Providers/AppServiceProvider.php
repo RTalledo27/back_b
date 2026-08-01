@@ -8,12 +8,14 @@ use App\Modules\Commerce\Application\Gateway\PaymentGatewayWebhookNormalizer;
 use App\Modules\Commerce\Application\Gateway\PaymentGatewayWebhookVerifier;
 use App\Modules\Commerce\Domain\Models\Order;
 use App\Modules\Commerce\Domain\Models\Payment;
+use App\Modules\Commerce\Domain\Models\WinnerPayout;
 use App\Modules\Commerce\Infrastructure\GameLifecycle\CommerceGameStartReadinessChecker;
 use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayProvider;
 use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayWebhookNormalizer;
 use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayWebhookVerifier;
 use App\Modules\Commerce\Presentation\Http\Policies\OrderPolicy;
 use App\Modules\Commerce\Presentation\Http\Policies\PaymentPolicy;
+use App\Modules\Commerce\Presentation\Http\Policies\WinnerPayoutPolicy;
 use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
 use App\Modules\RepeatNumberBingo\Application\Contracts\GameStartReadinessChecker;
 use App\Modules\RepeatNumberBingo\Application\Contracts\PublicGameUpdatesPublisher;
@@ -75,6 +77,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(WinnerClaim::class, WinnerClaimPolicy::class);
         Gate::policy(Order::class, OrderPolicy::class);
         Gate::policy(Payment::class, PaymentPolicy::class);
+        Gate::policy(WinnerPayout::class, WinnerPayoutPolicy::class);
 
         $this->configureAuthRateLimiters();
         $this->configurePasswordResetUrl();
@@ -199,6 +202,15 @@ class AppServiceProvider extends ServiceProvider
                 ->by('admin.winner-claim.review:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
                 ->response(fn (Request $request, array $headers) => response()->json([
                     'message' => 'Too many winner claim review requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('admin.winner-payout', function (Request $request): Limit {
+            return Limit::perMinute(20)
+                ->by('admin.winner-payout:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many winner payout requests.',
                     'error' => 'too_many_requests',
                 ], 429, $headers));
         });

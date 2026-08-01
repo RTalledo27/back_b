@@ -23,10 +23,17 @@ use App\Modules\Commerce\Domain\Models\Order;
 use App\Modules\Commerce\Domain\Models\Payment;
 use App\Modules\Commerce\Domain\Models\PaymentDocument;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ApprovePaymentController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ApproveWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\CancelWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\CreateWinnerPayoutController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\DownloadPaymentDocumentController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\DownloadWinnerPayoutDocumentController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminOrdersController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminPaymentsController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListGameNumbersAdminController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListWinnerPayoutsController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\MarkWinnerPayoutFailedController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\MarkWinnerPayoutPaidController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ProcessWinnerPayoutController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RecordGamePrizeFundingController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RefundOrderController;
@@ -35,6 +42,11 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RejectWinnerClaimCo
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowAdminPaymentController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowOrderRefundController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowAdminWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RejectWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\StartWinnerPayoutExecutionController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\SubmitWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\UpdateWinnerPayoutDestinationController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\VerifyWinnerClaimController;
 use App\Modules\Commerce\Presentation\Http\Controllers\PaymentGatewayWebhookController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\CancelOrderController;
@@ -52,6 +64,7 @@ use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
 use App\Modules\RepeatNumberBingo\Domain\Models\WinnerClaim;
 use App\Modules\RepeatNumberBingo\Domain\Models\WinnerIdentityDocument;
+use App\Modules\Commerce\Domain\Models\WinnerPayout;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CancelGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CloseGameSalesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CreateGameController;
@@ -87,6 +100,7 @@ Route::model('document', PaymentDocument::class);
 Route::model('winner', GameWinner::class);
 Route::model('claim', WinnerClaim::class);
 Route::model('identityDocument', WinnerIdentityDocument::class);
+Route::model('payout', WinnerPayout::class);
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/register', RegisterController::class)
@@ -163,6 +177,40 @@ Route::prefix('public')->group(function (): void {
         ->where('slug', '[a-z0-9-]+')
         ->name('public.games.number-counters.index');
 });
+
+Route::middleware(['auth:sanctum', 'admin'])
+    ->prefix('admin')
+    ->group(function (): void {
+        Route::get('/winner-payouts', ListWinnerPayoutsController::class)
+            ->name('admin.winner-payouts.index');
+        Route::get('/winner-payouts/{payout}', ShowAdminWinnerPayoutController::class)
+            ->name('admin.winner-payouts.show');
+        Route::get('/winner-payouts/{payout}/documents/{payoutDocument}', DownloadWinnerPayoutDocumentController::class)
+            ->name('admin.winner-payouts.documents.download');
+    });
+
+Route::middleware(['auth:sanctum', 'admin', 'idempotent', 'throttle:admin.winner-payout'])
+    ->prefix('admin')
+    ->group(function (): void {
+        Route::post('/games/{game}/winner-payouts', CreateWinnerPayoutController::class)
+            ->name('admin.games.winner-payouts.store');
+        Route::patch('/winner-payouts/{payout}', UpdateWinnerPayoutDestinationController::class)
+            ->name('admin.winner-payouts.update');
+        Route::post('/winner-payouts/{payout}/submit', SubmitWinnerPayoutController::class)
+            ->name('admin.winner-payouts.submit');
+        Route::post('/winner-payouts/{payout}/approve', ApproveWinnerPayoutController::class)
+            ->name('admin.winner-payouts.approve');
+        Route::post('/winner-payouts/{payout}/reject', RejectWinnerPayoutController::class)
+            ->name('admin.winner-payouts.reject');
+        Route::post('/winner-payouts/{payout}/mark-processing', StartWinnerPayoutExecutionController::class)
+            ->name('admin.winner-payouts.processing');
+        Route::post('/winner-payouts/{payout}/mark-paid', MarkWinnerPayoutPaidController::class)
+            ->name('admin.winner-payouts.paid');
+        Route::post('/winner-payouts/{payout}/mark-failed', MarkWinnerPayoutFailedController::class)
+            ->name('admin.winner-payouts.failed');
+        Route::post('/winner-payouts/{payout}/cancel', CancelWinnerPayoutController::class)
+            ->name('admin.winner-payouts.cancel');
+    });
 
 Route::middleware(['auth:sanctum', 'admin'])
     ->prefix('admin')

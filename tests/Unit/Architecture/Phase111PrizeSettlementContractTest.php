@@ -42,11 +42,8 @@ final class Phase111PrizeSettlementContractTest extends TestCase
     {
         $futureFragments = [
             '/audit',
-            '/winner-payouts',
             '/confirm-receipt',
             '/dispute',
-            '/mark-processing',
-            '/mark-paid',
             '/reconcile',
             '/resolve-dispute',
         ];
@@ -66,7 +63,6 @@ final class Phase111PrizeSettlementContractTest extends TestCase
         $migrationSource = implode("\n", $this->phpFiles([base_path('database/migrations')]));
 
         foreach ([
-            'winner_payout_events',
             'payout_receipt',
         ] as $forbiddenTerm) {
             self::assertStringNotContainsString($forbiddenTerm, $migrationSource);

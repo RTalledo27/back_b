@@ -6,9 +6,13 @@ namespace App\Modules\Commerce\Presentation\Http\Controllers\Admin;
 
 use App\Modules\Commerce\Application\Actions\ProcessWinnerPayoutAction;
 use App\Modules\Commerce\Application\DTOs\ProcessWinnerPayoutData;
+use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutWorkflowException;
+use App\Modules\Commerce\Domain\Models\WinnerPayout;
 use App\Modules\Commerce\Presentation\Http\Requests\Admin\ProcessWinnerPayoutRequest;
 use App\Modules\Commerce\Presentation\Http\Resources\Admin\WinnerPayoutResource;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
+use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
+use App\Modules\RepeatNumberBingo\Domain\Models\WinnerClaim;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\Response;
@@ -20,6 +24,16 @@ final class ProcessWinnerPayoutController
         Game $game,
         ProcessWinnerPayoutAction $action,
     ): Response {
+        $winner = GameWinner::query()->where('game_id', $game->getKey())->first();
+        $legacyPayoutExists = $winner !== null
+            && WinnerPayout::query()->where('game_winner_id', $winner->id)->exists();
+        $hasNewClaim = $winner !== null
+            && WinnerClaim::query()->where('game_winner_id', $winner->id)->exists();
+
+        if (! $legacyPayoutExists && $hasNewClaim) {
+            throw WinnerPayoutWorkflowException::legacyWriteDisabled();
+        }
+
         $actorUserId = (int) $request->user()?->getKey();
         $idempotencyKeyHash = hash('sha256', trim((string) $request->header('Idempotency-Key')));
 

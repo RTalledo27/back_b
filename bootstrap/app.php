@@ -23,6 +23,8 @@ use App\Modules\Commerce\Domain\Exceptions\RefundAmountMismatch;
 use App\Modules\Commerce\Domain\Exceptions\RefundNotFound;
 use App\Modules\Commerce\Domain\Exceptions\WinnerEntryNotRefundable;
 use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutNotFound;
+use App\Modules\Commerce\Domain\Exceptions\InvalidWinnerPayoutTransition;
+use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutWorkflowException;
 use App\Modules\Commerce\Presentation\Http\Exceptions\GatewayHttpException;
 use App\Modules\Commerce\Presentation\Http\Middleware\EnsurePaymentGatewayHttpEnabled;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\DrawnNumberOutOfRange;
@@ -432,6 +434,27 @@ return Application::configure(basePath: dirname(__DIR__))
                     'message' => $e->getMessage(),
                     'error' => 'payout_not_found',
                 ], 404);
+            }
+        });
+
+        $exceptions->render(function (InvalidWinnerPayoutTransition $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'invalid_winner_payout_transition',
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (WinnerPayoutWorkflowException $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                $status = $e->reason === 'legacy_write_disabled' ? 410 : 422;
+
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'winner_payout_workflow_error',
+                    'reason' => $e->reason,
+                ], $status);
             }
         });
     })->create();

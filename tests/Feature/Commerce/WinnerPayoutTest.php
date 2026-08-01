@@ -149,7 +149,7 @@ final class WinnerPayoutTest extends TestCase
             ->assertJsonPath('data.amount_cents', 50000)
             ->assertJsonPath('data.currency', 'PEN')
             ->assertJsonPath('data.method', 'manual')
-            ->assertJsonPath('data.external_reference', 'OP-TEST-001')
+            ->assertJsonPath('data.external_reference', '****-001')
             ->assertJsonPath('data.was_already_processed', false)
             ->assertJsonStructure([
                 'data' => [

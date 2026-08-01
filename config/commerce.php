@@ -59,6 +59,17 @@ return [
         'max_size_kb' => (int) env('COMMERCE_PRIZE_FUNDING_MAX_SIZE_KB', 5120),
     ],
 
+    'winner_payout' => [
+        'disk' => env('COMMERCE_WINNER_PAYOUT_DISK', 'winner_payouts'),
+        'max_size_kb' => (int) env('COMMERCE_WINNER_PAYOUT_MAX_SIZE_KB', 10240),
+        'mime_to_extension' => [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/webp' => 'webp',
+            'application/pdf' => 'pdf',
+        ],
+    ],
+
     'idempotency' => [
 
         /*
