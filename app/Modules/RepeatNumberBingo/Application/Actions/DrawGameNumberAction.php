@@ -60,6 +60,7 @@ final class DrawGameNumberAction
         private readonly DrawNumberStrategy $drawStrategy,
         private readonly CommittedDrawEventsDispatcher $events,
         private readonly RecordOutboxEventAction $recordOutbox,
+        private readonly CreateWinnerClaimAction $createWinnerClaim,
     ) {}
 
     public function execute(DrawGameNumberData $data): DrawGameNumberResult
@@ -393,6 +394,8 @@ final class DrawGameNumberAction
             'winning_hits' => $winningHits,
             'won_at' => $completedAt,
         ]);
+
+        $this->createWinnerClaim->executeWithinTransaction($winner->id, $actorUserId);
 
         $game->transitionTo(GameStatus::Resolving);
         $game->save();

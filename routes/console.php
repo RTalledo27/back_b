@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Modules\Commerce\Application\Jobs\ExpirePendingOrdersJob;
 use App\Modules\RepeatNumberBingo\Application\Jobs\DispatchDueGameDrawsJob;
+use App\Modules\RepeatNumberBingo\Application\Jobs\ExpireWinnerClaimsJob;
 use App\Modules\Shared\Application\Jobs\ProcessOutboxEventsJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -83,5 +84,9 @@ $engineDispatcher->withoutOverlapping(1);
 |
 */
 Schedule::job(new ProcessOutboxEventsJob)
+    ->everyMinute()
+    ->withoutOverlapping(2);
+
+Schedule::job(new ExpireWinnerClaimsJob)
     ->everyMinute()
     ->withoutOverlapping(2);

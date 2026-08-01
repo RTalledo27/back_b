@@ -102,4 +102,14 @@ final class GamePolicy
     {
         return $user->isAdmin();
     }
+
+    public function viewPrizeFunding(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
+
+    public function recordPrizeFunding(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
 }

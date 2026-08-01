@@ -18,10 +18,13 @@ use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
 use App\Modules\RepeatNumberBingo\Application\Contracts\GameStartReadinessChecker;
 use App\Modules\RepeatNumberBingo\Application\Contracts\PublicGameUpdatesPublisher;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
+use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
+use App\Modules\RepeatNumberBingo\Domain\Models\WinnerClaim;
 use App\Modules\RepeatNumberBingo\Domain\Services\EngineTickCommandIdGenerator;
 use App\Modules\RepeatNumberBingo\Infrastructure\Broadcasting\LaravelPublicGameUpdatesPublisher;
 use App\Modules\RepeatNumberBingo\Infrastructure\Randomness\CryptographicallySecureDrawNumberStrategy;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Policies\GamePolicy;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Policies\WinnerClaimPolicy;
 use App\Services\Auth\SocialiteProviderAdapter;
 use App\Services\Auth\SocialProviderAdapter;
 use Illuminate\Auth\Notifications\ResetPassword;
@@ -68,6 +71,8 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(Game::class, GamePolicy::class);
+        Gate::policy(GameWinner::class, WinnerClaimPolicy::class);
+        Gate::policy(WinnerClaim::class, WinnerClaimPolicy::class);
         Gate::policy(Order::class, OrderPolicy::class);
         Gate::policy(Payment::class, PaymentPolicy::class);
 
@@ -167,6 +172,33 @@ class AppServiceProvider extends ServiceProvider
                 ->by('admin.create-player:'.$userId)
                 ->response(fn (Request $request, array $headers) => response()->json([
                     'message' => 'Too many authentication attempts.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('admin.prize-funding', function (Request $request): Limit {
+            return Limit::perMinute(10)
+                ->by('admin.prize-funding:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many prize funding requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('winner-claim.submit', function (Request $request): Limit {
+            return Limit::perMinute(5)
+                ->by('winner-claim.submit:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many winner claim requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('admin.winner-claim.review', function (Request $request): Limit {
+            return Limit::perMinute(20)
+                ->by('admin.winner-claim.review:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many winner claim review requests.',
                     'error' => 'too_many_requests',
                 ], 429, $headers));
         });

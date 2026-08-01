@@ -28,11 +28,14 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminOrdersCont
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminPaymentsController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListGameNumbersAdminController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ProcessWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RecordGamePrizeFundingController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RefundOrderController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RejectPaymentController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RejectWinnerClaimController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowAdminPaymentController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowOrderRefundController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\VerifyWinnerClaimController;
 use App\Modules\Commerce\Presentation\Http\Controllers\PaymentGatewayWebhookController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\CancelOrderController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\CreateGatewayPaymentAttemptController;
@@ -43,15 +46,21 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Player\ReserveGameNumbers
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ShowGatewayPaymentAttemptController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ShowMyOrderController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\SubmitPaymentEvidenceController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Player\SubmitWinnerClaimController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Public\ListGameNumbersPublicController;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
+use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
+use App\Modules\RepeatNumberBingo\Domain\Models\WinnerClaim;
+use App\Modules\RepeatNumberBingo\Domain\Models\WinnerIdentityDocument;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CancelGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CloseGameSalesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CreateGameController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\DownloadWinnerIdentityDocumentController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\DrawGameNumberController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListAdminGamesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListGameCountersController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListGameDrawsController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ListWinnerClaimsController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\OpenGameSalesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\PauseGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\PublishGameController;
@@ -59,8 +68,12 @@ use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\RebuildCou
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ResumeGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ScheduleGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ShowAdminGameController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ShowGamePrizeFundingController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ShowGameWinnerController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\ShowWinnerClaimController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\StartGameController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Player\ListMyWinnerClaimsController;
+use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Player\ShowMyWinnerClaimController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGameDrawsController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGameNumberCountersController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Public\ListPublicGamesController;
@@ -71,6 +84,9 @@ Route::model('game', Game::class);
 Route::model('order', Order::class);
 Route::model('payment', Payment::class);
 Route::model('document', PaymentDocument::class);
+Route::model('winner', GameWinner::class);
+Route::model('claim', WinnerClaim::class);
+Route::model('identityDocument', WinnerIdentityDocument::class);
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/register', RegisterController::class)
@@ -181,6 +197,14 @@ Route::middleware(['auth:sanctum', 'admin'])
             ->name('admin.games.counters.index');
         Route::get('/games/{game}/winner', ShowGameWinnerController::class)
             ->name('admin.games.winner.show');
+        Route::get('/games/{game}/prize-funding', ShowGamePrizeFundingController::class)
+            ->name('admin.games.prize-funding.show');
+        Route::get('/winner-claims', ListWinnerClaimsController::class)
+            ->name('admin.winner-claims.index');
+        Route::get('/winner-claims/{claim}', ShowWinnerClaimController::class)
+            ->name('admin.winner-claims.show');
+        Route::get('/winner-claims/{claim}/documents/{identityDocument}/download', DownloadWinnerIdentityDocumentController::class)
+            ->name('admin.winner-claims.documents.download');
     });
 
 Route::middleware(['auth:sanctum', 'verified', 'idempotent'])
@@ -214,6 +238,15 @@ Route::middleware(['auth:sanctum', 'admin', 'idempotent'])
             ->name('admin.orders.refund.store');
         Route::post('/games/{game}/winner/payout', ProcessWinnerPayoutController::class)
             ->name('admin.games.winner.payout.store');
+        Route::post('/games/{game}/prize-funding', RecordGamePrizeFundingController::class)
+            ->middleware('throttle:admin.prize-funding')
+            ->name('admin.games.prize-funding.store');
+        Route::post('/winner-claims/{claim}/verify', VerifyWinnerClaimController::class)
+            ->middleware('throttle:admin.winner-claim.review')
+            ->name('admin.winner-claims.verify');
+        Route::post('/winner-claims/{claim}/reject', RejectWinnerClaimController::class)
+            ->middleware('throttle:admin.winner-claim.review')
+            ->name('admin.winner-claims.reject');
     });
 
 Route::middleware(['auth:sanctum', 'admin'])
@@ -231,7 +264,16 @@ Route::middleware('auth:sanctum')->prefix('me')->group(function (): void {
     Route::get('/orders/{order}', ShowMyOrderController::class);
     Route::post('/orders/{order}/cancel', CancelOrderController::class);
     Route::get('/entries', ListMyEntriesController::class);
+    Route::get('/winnings', ListMyWinnerClaimsController::class)
+        ->name('me.winnings.index');
+    Route::get('/winnings/{winner}', ShowMyWinnerClaimController::class)
+        ->name('me.winnings.show');
 });
+
+Route::middleware(['auth:sanctum', 'verified', 'idempotent'])
+    ->post('/me/winnings/{winner}/claim', SubmitWinnerClaimController::class)
+    ->middleware('throttle:winner-claim.submit')
+    ->name('me.winnings.claim.store');
 
 Route::middleware('payment-gateway.http')->group(function (): void {
     Route::middleware(['auth:sanctum', 'verified', 'throttle:payment-gateway.attempt'])

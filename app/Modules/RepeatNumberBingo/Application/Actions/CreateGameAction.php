@@ -7,10 +7,14 @@ namespace App\Modules\RepeatNumberBingo\Application\Actions;
 use App\Modules\RepeatNumberBingo\Application\DTOs\CreateGameData;
 use App\Modules\RepeatNumberBingo\Application\Services\GameNumberGenerator;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType;
+use App\Modules\RepeatNumberBingo\Domain\Enums\GamePrizeFundingEventType;
+use App\Modules\RepeatNumberBingo\Domain\Enums\GamePrizeFundingStatus;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
 use App\Modules\RepeatNumberBingo\Domain\Events\GameCreated;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
+use App\Modules\RepeatNumberBingo\Domain\Models\GamePrizeFunding;
+use App\Modules\RepeatNumberBingo\Domain\Models\GamePrizeFundingEvent;
 use Illuminate\Support\Facades\DB;
 
 final class CreateGameAction
@@ -43,6 +47,26 @@ final class CreateGameAction
             ]);
 
             $game->save();
+
+            $funding = GamePrizeFunding::create([
+                'game_id' => $game->id,
+                'status' => GamePrizeFundingStatus::Unfunded,
+                'amount_cents' => $game->prize_cents,
+                'currency' => $game->currency,
+            ]);
+
+            GamePrizeFundingEvent::forceCreate([
+                'game_prize_funding_id' => $funding->id,
+                'event_type' => GamePrizeFundingEventType::FundingCreated,
+                'from_status' => null,
+                'to_status' => GamePrizeFundingStatus::Unfunded->value,
+                'actor_user_id' => $data->createdBy,
+                'reason_code' => 'game_created',
+                'safe_metadata' => [],
+                'correlation_id' => null,
+                'occurred_at' => now(),
+                'created_at' => now(),
+            ]);
 
             $this->numberGenerator->generateFor($game, $data->range);
 

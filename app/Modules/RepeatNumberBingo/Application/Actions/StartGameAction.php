@@ -61,6 +61,7 @@ final class StartGameAction
     public function __construct(
         private readonly GameStartReadinessChecker $readiness,
         private readonly CommittedPublicGameUpdatesDispatcher $publicUpdates,
+        private readonly ReserveGamePrizeFundingAction $reservePrizeFunding,
     ) {}
 
     public function execute(StartGameData $data): StartGameResult
@@ -184,6 +185,8 @@ final class StartGameAction
         if ($game->auto_draw_enabled) {
             $this->assertValidEngineConfiguration($game);
         }
+
+        $this->reservePrizeFunding->executeWithinTransaction($game, $data->actorUserId);
 
         $game->transitionTo(GameStatus::Running);
         $game->started_at = $startedAt;

@@ -380,15 +380,15 @@ final class Phase7IdentityArchitectureTest extends TestCase
         }
     }
 
-    public function test_verified_middleware_applied_only_to_commerce_write_endpoints(): void
+    public function test_verified_middleware_applied_to_identity_required_write_endpoints(): void
     {
         $routesPath = __DIR__.'/../../../routes/api.php';
         $content = file_get_contents($routesPath) ?: '';
 
         $this->assertSame(
-            3,
+            4,
             substr_count($content, "'verified'"),
-            "The 'verified' middleware must appear in routes/api.php exactly three times — only for reservations, payment-evidence and gateway-attempt POST endpoints.",
+            "The 'verified' middleware must appear in routes/api.php exactly four times for identity-required write endpoints.",
         );
         $this->assertStringContainsString(
             "Route::middleware(['auth:sanctum', 'verified', 'throttle:payment-gateway.attempt'])",

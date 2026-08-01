@@ -54,6 +54,11 @@ return [
         ],
     ],
 
+    'prize_funding' => [
+        'disk' => env('COMMERCE_PRIZE_FUNDING_DISK', 'game_prize_fundings'),
+        'max_size_kb' => (int) env('COMMERCE_PRIZE_FUNDING_MAX_SIZE_KB', 5120),
+    ],
+
     'idempotency' => [
 
         /*

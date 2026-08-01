@@ -555,18 +555,143 @@ apruebe su deprecación o redefinición. No se cambia en 11.1.
 
 ## Plan de subfases restantes
 
-### 11.2 — Prize funding y winner claim
+### Fase 11.2A — Prize funding foundation
 
-- **Objetivo:** modelar funding, reserva, claim, identidad y plazos.
-- **Alcance:** migraciones de funding/claim, policies, acciones y contratos
-  privados; exigir funding antes de publicar o iniciar según política aprobada.
-- **Endpoints probables:** lectura y claim del ganador; operaciones internas de
-  funding, sujetas a revisión de seguridad.
-- **Eventos:** funding audit-only y claim privado, sin ampliar Outbox sin
-  contrato aprobado.
-- **Tests:** transiciones, locks, expiración, ownership, PII y recuperación.
-- **Límites:** no ejecutar transferencias ni integrar bancos, Yape o Plin.
-- **Cierre:** funding y claim auditables, sin inicio de juego sin respaldo.
+- **Objetivo:** respaldar, reservar y liberar el premio anunciado.
+- **Alcance:** aggregate de funding, evidencia privada, auditoría append-only,
+  gates de publicación, reserva al iniciar y liberación por cancelación.
+- **Endpoints:** registro y consulta administrativa del funding; no hay endpoint
+  público ni operación de claim.
+- **Eventos:** `funding_created`, `funding_recorded`, `funding_reserved` y
+  `funding_released`, sin ampliar Outbox.
+- **Tests:** migración histórica, transiciones, locks, idempotencia, privacidad
+  y recuperación transaccional.
+- **Límites:** no ejecutar transferencias ni integrar bancos, Yape o Plin; claim,
+  identidad y destino del ganador pertenecen a 11.2B.
+- **Cierre:** 11.2A exige funding antes de iniciar; el claim queda en 11.2B.
+
+#### Alcance ejecutado de 11.2A
+
+Este bloque implementa únicamente el respaldo, la reserva y la liberación del
+premio. `GamePrizeFunding` es un aggregate separado de `Game`,
+con una fila única por juego y `amount_cents`/`currency`
+copiados exclusivamente desde `Game`.
+
+Los juegos creados por `CreateGameAction` nacen en `unfunded`
+y registran `funding_created` en la misma transacción. La migración
+crea para juegos anteriores el estado técnico `legacy_unverified`;
+esto no demuestra que el premio histórico haya sido financiado ni inventa
+evidencia retroactiva.
+
+Las transiciones implementadas son:
+
+```text
+unfunded → funded
+legacy_unverified → funded
+funded → reserved
+funded → released
+reserved → released
+```
+
+`PublishGameAction` exige `funded` para juegos con registro
+de funding. `StartGameAction` bloquea primero `Game` y luego
+`GamePrizeFunding`; reserva el premio en la misma transacción que
+cambia el juego a `running`. La cancelación libera `funded` o
+`reserved` con `release_reason_code = game_cancelled`. Un
+juego `completed` no libera automáticamente el premio.
+
+La evidencia se guarda en storage privado, con MIME detectado por el servidor,
+SHA-256, tamaño y metadata append-only. No se publican `disk`,
+`path` ni el hash completo. Los eventos `funding_created`,
+`funding_recorded`, `funding_reserved` y
+`funding_released` son append-only y no usan Outbox.
+
+Endpoints administrativos:
+
+```text
+POST /api/v1/admin/games/{game}/prize-funding
+GET  /api/v1/admin/games/{game}/prize-funding
+```
+
+El registro requiere `auth:sanctum`, administración,
+`Idempotency-Key`, multipart y documento privado. No acepta
+`amount_cents` ni `currency` del cliente. El replay devuelve
+el resultado existente y no duplica documento ni evento; una huella distinta
+produce conflicto.
+
+El lock order es `Game → GamePrizeFunding`; los documentos se
+escriben antes de abrir la transacción y se compensan si la transacción falla.
+La operación no crea Outbox, Notification, payout, claim ni integración
+externa.
+
+#### Fase 11.2B — Winner claim e identidad
+
+El bloque 11.2B queda implementado como un flujo de reclamación e identidad
+manual, separado de `GameWinner`, `GamePrizeFunding` y `WinnerPayout`.
+
+#### Alcance implementado de 11.2B
+
+Al declararse un ganador, `DrawGameNumberAction` crea dentro de la misma
+transacción un `WinnerClaim` en estado `pending_claim`. La migración crea para
+ganadores históricos un claim `is_legacy = true`, con referencia técnica y sin
+inventar ventana, verificación, funding ni payout retroactivo.
+
+El claim conserva estos momentos: `claim_window_started_at`, `expires_at`,
+`claimed_at`, `identity_submitted_at`, `verified_at`, `rejected_at` y
+`expired_at`. La ventana nueva comienza en `GameWinner.won_at` y usa
+`WINNER_CLAIM_TTL_DAYS` (30 por defecto, validado entre 1 y 3650 días).
+Los claims legacy no se vencen automáticamente porque no tienen una ventana
+inventada.
+
+Los estados permitidos son:
+
+```text
+pending_claim -> identity_pending -> verified
+pending_claim -> expired
+identity_pending -> rejected
+```
+
+El jugador solo puede consultar sus propios claims y enviar una reclamación
+con correo verificado, `Idempotency-Key`, nombre legal, tipo y número de
+documento, consentimiento y evidencia de identidad. El agregado valida
+ownership, ventana, estado y cantidad de documentos. Los datos sensibles del
+perfil se guardan con casts `encrypted`; los archivos usan el disco privado
+`winner_identity_documents`, MIME detectado por el servidor, tamaño limitado,
+SHA-256 y metadata append-only. Las respuestas del jugador no incluyen PII de
+identidad, hashes, rutas ni nombres de disco.
+
+El administrador puede listar y revisar claims mediante:
+
+```text
+GET  /api/v1/me/winnings
+GET  /api/v1/me/winnings/{winner}
+POST /api/v1/me/winnings/{winner}/claim
+GET  /api/v1/admin/winner-claims
+GET  /api/v1/admin/winner-claims/{claim}
+GET  /api/v1/admin/winner-claims/{claim}/documents/{identityDocument}/download
+POST /api/v1/admin/winner-claims/{claim}/verify
+POST /api/v1/admin/winner-claims/{claim}/reject
+```
+
+La revisión requiere administración, impide auto-revisión, exige
+`identity_pending` y registra únicamente códigos de rechazo permitidos:
+`identity_mismatch`, `document_unreadable`, `document_incomplete`,
+`duplicate_claim` y `other_review_reason`. Cada cambio produce un evento
+append-only en `winner_claim_events`; no se amplía Outbox ni se crean
+notificaciones nuevas en este bloque.
+
+La expiración se ejecuta con `ExpireWinnerClaimsJob` cada minuto. El orden de
+bloqueo de las acciones es `Game -> GameWinner -> WinnerClaim`; las acciones
+exigen una transacción activa. La creación al declarar ganador es idempotente
+por `game_winner_id`; el envío y la revisión usan idempotencia durable con
+huella de request. Un replay compatible devuelve el estado existente y no
+duplica claim, documento ni evento; una huella distinta produce conflicto.
+
+El flujo de archivos aplica compensación si falla la transacción. La descarga
+es privada, exige permisos y usa `Cache-Control: no-store, private`. No se
+implementan cuentas bancarias, Yape, Plin, transferencia, payout automático
+ni confirmación financiera: `verified` demuestra revisión administrativa de
+identidad, no recepción del dinero.
 
 ### 11.3 — Payout manual con dual control
 

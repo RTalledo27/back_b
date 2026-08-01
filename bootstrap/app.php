@@ -33,12 +33,15 @@ use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameHasNoScheduledStart;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameLifecycleIntegrityViolation;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameNotReadyForStart;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameParticipationIntegrityViolation;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\GamePrizeFundingNotProcessable;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\GameStartTooEarly;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidDrawCommandId;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameConfiguration;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameEngineConfiguration;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidGameTransition;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\InvalidWinnerClaimTransition;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\RebuildIntegrityViolation;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\WinnerClaimNotProcessable;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -213,7 +216,7 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (IdempotencyKeyMismatch $e, Request $request) {
-            if ($request->expectsJson()) {
+            if ($request->expectsJson() || $request->is('api/*')) {
                 return response()->json([
                     'message' => $e->getMessage(),
                     'error' => 'idempotency_key_mismatch',
@@ -222,7 +225,7 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->render(function (IdempotencyInProgress $e, Request $request) {
-            if ($request->expectsJson()) {
+            if ($request->expectsJson() || $request->is('api/*')) {
                 return response()->json([
                     'message' => $e->getMessage(),
                     'error' => 'idempotency_in_progress',
@@ -292,6 +295,35 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'message' => 'Game participation integrity check failed.',
                     'error' => 'game_participation_integrity_violation',
+                ], 409);
+            }
+        });
+
+        $exceptions->render(function (GamePrizeFundingNotProcessable $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'game_prize_funding_not_processable',
+                    'reason' => $e->reason,
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (WinnerClaimNotProcessable $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'winner_claim_not_processable',
+                    'reason' => $e->reason,
+                ], 422);
+            }
+        });
+
+        $exceptions->render(function (InvalidWinnerClaimTransition $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'invalid_winner_claim_transition',
                 ], 409);
             }
         });

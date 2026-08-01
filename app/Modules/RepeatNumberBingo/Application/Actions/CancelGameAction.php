@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\DB;
 
 final class CancelGameAction
 {
+    public function __construct(
+        private readonly ReleaseGamePrizeFundingAction $releasePrizeFunding,
+    ) {}
+
     public function execute(string $gameId, ?string $reason = null, ?int $actorUserId = null): Game
     {
         $game = DB::transaction(function () use ($gameId, $reason, $actorUserId): Game {
@@ -21,6 +25,12 @@ final class CancelGameAction
                 ->whereKey($gameId)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            $this->releasePrizeFunding->executeWithinTransaction(
+                $game,
+                'game_cancelled',
+                $actorUserId,
+            );
 
             $game->transitionTo(GameStatus::Cancelled);
             $game->save();

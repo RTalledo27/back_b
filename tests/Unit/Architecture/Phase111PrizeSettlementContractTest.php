@@ -42,9 +42,7 @@ final class Phase111PrizeSettlementContractTest extends TestCase
     {
         $futureFragments = [
             '/audit',
-            '/winnings',
             '/winner-payouts',
-            '/claim',
             '/confirm-receipt',
             '/dispute',
             '/mark-processing',
@@ -68,8 +66,6 @@ final class Phase111PrizeSettlementContractTest extends TestCase
         $migrationSource = implode("\n", $this->phpFiles([base_path('database/migrations')]));
 
         foreach ([
-            'prize_fund',
-            'winner_claim',
             'winner_payout_events',
             'payout_receipt',
         ] as $forbiddenTerm) {
@@ -131,7 +127,6 @@ final class Phase111PrizeSettlementContractTest extends TestCase
 
         foreach ([
             'prize_funded',
-            'pending_claim',
             'winner_payout_events',
             'financially_closed',
             'server_seed_commitment',

@@ -149,6 +149,14 @@ class Game extends Model
     }
 
     /**
+     * @return HasOne<GamePrizeFunding, $this>
+     */
+    public function prizeFunding(): HasOne
+    {
+        return $this->hasOne(GamePrizeFunding::class);
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function creator(): BelongsTo

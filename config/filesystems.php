@@ -65,6 +65,24 @@ return [
             'report' => false,
         ],
 
+        'game_prize_fundings' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/game-prize-fundings'),
+            'visibility' => 'private',
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
+        'winner_identity_documents' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/winner-identity-documents'),
+            'visibility' => 'private',
+            'serve' => false,
+            'throw' => true,
+            'report' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

@@ -9,6 +9,7 @@ use App\Modules\Shared\Domain\Exceptions\ImmutableModelException;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -96,5 +97,10 @@ class GameWinner extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function claim(): HasOne
+    {
+        return $this->hasOne(WinnerClaim::class, 'game_winner_id');
     }
 }

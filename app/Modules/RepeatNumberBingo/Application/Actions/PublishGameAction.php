@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Modules\RepeatNumberBingo\Application\Actions;
 
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameEventType;
+use App\Modules\RepeatNumberBingo\Domain\Enums\GamePrizeFundingStatus;
 use App\Modules\RepeatNumberBingo\Domain\Enums\GameStatus;
 use App\Modules\RepeatNumberBingo\Domain\Events\GamePublished;
+use App\Modules\RepeatNumberBingo\Domain\Exceptions\GamePrizeFundingNotProcessable;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameEvent;
+use App\Modules\RepeatNumberBingo\Domain\Models\GamePrizeFunding;
 use Illuminate\Support\Facades\DB;
 
 final class PublishGameAction
@@ -21,6 +24,15 @@ final class PublishGameAction
                 ->whereKey($gameId)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            $funding = GamePrizeFunding::query()
+                ->where('game_id', $game->id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($funding !== null && $funding->status !== GamePrizeFundingStatus::Funded) {
+                throw GamePrizeFundingNotProcessable::status($game->id, $funding->status->value);
+            }
 
             $game->transitionTo(GameStatus::Published);
             $game->save();
