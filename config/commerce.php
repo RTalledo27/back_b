@@ -68,6 +68,7 @@ return [
             'image/webp' => 'webp',
             'application/pdf' => 'pdf',
         ],
+        'confirmation_ttl_days' => (int) env('WINNER_PAYOUT_CONFIRMATION_TTL_DAYS', 7),
     ],
 
     'idempotency' => [

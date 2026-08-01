@@ -386,7 +386,7 @@ final class Phase7IdentityArchitectureTest extends TestCase
         $content = file_get_contents($routesPath) ?: '';
 
         $this->assertSame(
-            4,
+            5,
             substr_count($content, "'verified'"),
             "The 'verified' middleware must appear in routes/api.php exactly four times for identity-required write endpoints.",
         );

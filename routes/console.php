@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Modules\Commerce\Application\Jobs\ExpirePendingOrdersJob;
+use App\Modules\Commerce\Application\Jobs\ExpireWinnerPayoutReceiptsJob;
 use App\Modules\RepeatNumberBingo\Application\Jobs\DispatchDueGameDrawsJob;
 use App\Modules\RepeatNumberBingo\Application\Jobs\ExpireWinnerClaimsJob;
 use App\Modules\Shared\Application\Jobs\ProcessOutboxEventsJob;
@@ -88,5 +89,9 @@ Schedule::job(new ProcessOutboxEventsJob)
     ->withoutOverlapping(2);
 
 Schedule::job(new ExpireWinnerClaimsJob)
+    ->everyMinute()
+    ->withoutOverlapping(2);
+
+Schedule::job(new ExpireWinnerPayoutReceiptsJob)
     ->everyMinute()
     ->withoutOverlapping(2);

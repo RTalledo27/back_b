@@ -20,6 +20,16 @@ final class WinnerClaimPolicy
         return $winner->user_id === $user->id;
     }
 
+    public function confirmReceipt(User $user, GameWinner $winner): bool
+    {
+        return ! $user->isAdmin() && $winner->user_id === $user->id;
+    }
+
+    public function openDispute(User $user, GameWinner $winner): bool
+    {
+        return ! $user->isAdmin() && $winner->user_id === $user->id;
+    }
+
     public function viewWinnerClaims(User $user): bool
     {
         return $user->isAdmin();

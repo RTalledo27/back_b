@@ -32,6 +32,7 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminOrdersCont
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListAdminPaymentsController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListGameNumbersAdminController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListWinnerPayoutsController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ListWinnerPayoutDisputesController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\MarkWinnerPayoutFailedController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\MarkWinnerPayoutPaidController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ProcessWinnerPayoutController;
@@ -44,6 +45,10 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowOrderRefundCont
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowWinnerPayoutController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowAdminWinnerPayoutController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\RejectWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ReconcileWinnerPayoutController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ResolveWinnerPayoutDisputeController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\ShowWinnerPayoutDisputeController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\StartWinnerPayoutDisputeReviewController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\StartWinnerPayoutExecutionController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\SubmitWinnerPayoutController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Admin\UpdateWinnerPayoutDestinationController;
@@ -59,13 +64,17 @@ use App\Modules\Commerce\Presentation\Http\Controllers\Player\ShowGatewayPayment
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\ShowMyOrderController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\SubmitPaymentEvidenceController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Player\SubmitWinnerClaimController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Player\ConfirmWinnerPayoutReceiptController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Player\OpenWinnerPayoutDisputeController;
 use App\Modules\Commerce\Presentation\Http\Controllers\Public\ListGameNumbersPublicController;
 use App\Modules\RepeatNumberBingo\Domain\Models\Game;
 use App\Modules\RepeatNumberBingo\Domain\Models\GameWinner;
 use App\Modules\RepeatNumberBingo\Domain\Models\WinnerClaim;
 use App\Modules\RepeatNumberBingo\Domain\Models\WinnerIdentityDocument;
 use App\Modules\Commerce\Domain\Models\WinnerPayout;
+use App\Modules\Commerce\Domain\Models\WinnerPayoutDispute;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CancelGameController;
+use App\Modules\Commerce\Presentation\Http\Controllers\Admin\CloseGameFinancialController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CloseGameSalesController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\CreateGameController;
 use App\Modules\RepeatNumberBingo\Presentation\Http\Controllers\Admin\DownloadWinnerIdentityDocumentController;
@@ -101,6 +110,7 @@ Route::model('winner', GameWinner::class);
 Route::model('claim', WinnerClaim::class);
 Route::model('identityDocument', WinnerIdentityDocument::class);
 Route::model('payout', WinnerPayout::class);
+Route::model('dispute', WinnerPayoutDispute::class);
 
 Route::prefix('auth')->group(function (): void {
     Route::post('/register', RegisterController::class)
@@ -187,6 +197,10 @@ Route::middleware(['auth:sanctum', 'admin'])
             ->name('admin.winner-payouts.show');
         Route::get('/winner-payouts/{payout}/documents/{payoutDocument}', DownloadWinnerPayoutDocumentController::class)
             ->name('admin.winner-payouts.documents.download');
+        Route::get('/winner-payout-disputes', ListWinnerPayoutDisputesController::class)
+            ->name('admin.winner-payout-disputes.index');
+        Route::get('/winner-payout-disputes/{dispute}', ShowWinnerPayoutDisputeController::class)
+            ->name('admin.winner-payout-disputes.show');
     });
 
 Route::middleware(['auth:sanctum', 'admin', 'idempotent', 'throttle:admin.winner-payout'])
@@ -210,6 +224,18 @@ Route::middleware(['auth:sanctum', 'admin', 'idempotent', 'throttle:admin.winner
             ->name('admin.winner-payouts.failed');
         Route::post('/winner-payouts/{payout}/cancel', CancelWinnerPayoutController::class)
             ->name('admin.winner-payouts.cancel');
+        Route::post('/winner-payouts/{payout}/reconcile', ReconcileWinnerPayoutController::class)
+            ->middleware('throttle:admin.winner-payout-reconcile')
+            ->name('admin.winner-payouts.reconcile');
+    });
+
+Route::middleware(['auth:sanctum', 'admin', 'idempotent', 'throttle:admin.winner-payout-dispute'])
+    ->prefix('admin')
+    ->group(function (): void {
+        Route::post('/winner-payout-disputes/{dispute}/start-review', StartWinnerPayoutDisputeReviewController::class)
+            ->name('admin.winner-payout-disputes.review');
+        Route::post('/winner-payout-disputes/{dispute}/resolve', ResolveWinnerPayoutDisputeController::class)
+            ->name('admin.winner-payout-disputes.resolve');
     });
 
 Route::middleware(['auth:sanctum', 'admin'])
@@ -227,6 +253,9 @@ Route::middleware(['auth:sanctum', 'admin'])
         Route::post('/games/{game}/close-sales', CloseGameSalesController::class);
         Route::post('/games/{game}/schedule', ScheduleGameController::class);
         Route::post('/games/{game}/cancel', CancelGameController::class);
+        Route::post('/games/{game}/financial-close', CloseGameFinancialController::class)
+            ->middleware(['idempotent', 'throttle:admin.financial-close'])
+            ->name('admin.games.financial-close');
 
         // Phase 3.8 — engine endpoints
         Route::post('/games/{game}/start', StartGameController::class)
@@ -322,6 +351,17 @@ Route::middleware(['auth:sanctum', 'verified', 'idempotent'])
     ->post('/me/winnings/{winner}/claim', SubmitWinnerClaimController::class)
     ->middleware('throttle:winner-claim.submit')
     ->name('me.winnings.claim.store');
+
+Route::middleware(['auth:sanctum', 'verified', 'idempotent'])
+    ->prefix('me/winnings/{winner}')
+    ->group(function (): void {
+        Route::post('/confirm-receipt', ConfirmWinnerPayoutReceiptController::class)
+            ->middleware('throttle:winner-payout.receipt')
+            ->name('me.winnings.receipt.confirm');
+        Route::post('/dispute', OpenWinnerPayoutDisputeController::class)
+            ->middleware('throttle:winner-payout.dispute')
+            ->name('me.winnings.dispute.store');
+    });
 
 Route::middleware('payment-gateway.http')->group(function (): void {
     Route::middleware(['auth:sanctum', 'verified', 'throttle:payment-gateway.attempt'])

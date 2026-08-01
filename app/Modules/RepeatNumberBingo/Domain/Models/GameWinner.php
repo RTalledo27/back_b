@@ -103,4 +103,5 @@ class GameWinner extends Model
     {
         return $this->hasOne(WinnerClaim::class, 'game_winner_id');
     }
+
 }

@@ -12,6 +12,7 @@ enum WinnerPayoutStatus: string
     case Approved = 'approved';
     case Processing = 'processing';
     case Paid = 'paid';
+    case Disputed = 'disputed';
     case Failed = 'failed';
     case Cancelled = 'cancelled';
 
@@ -22,13 +23,15 @@ enum WinnerPayoutStatus: string
             self::AwaitingApproval => in_array($next, [self::Approved, self::Draft, self::Cancelled], true),
             self::Approved => in_array($next, [self::Processing, self::Cancelled], true),
             self::Processing => in_array($next, [self::Paid, self::Failed], true),
+            self::Paid => $next === self::Disputed,
+            self::Disputed => in_array($next, [self::Paid, self::Failed], true),
             self::Failed => in_array($next, [self::Processing, self::Cancelled], true),
-            self::LegacyRegistered, self::Paid, self::Cancelled => false,
+            self::LegacyRegistered, self::Cancelled => false,
         };
     }
 
     public function isTerminal(): bool
     {
-        return in_array($this, [self::LegacyRegistered, self::Paid, self::Cancelled], true);
+        return in_array($this, [self::LegacyRegistered, self::Cancelled], true);
     }
 }

@@ -175,4 +175,27 @@ class WinnerPayout extends Model
     {
         return $this->hasMany(WinnerPayoutEvent::class, 'winner_payout_id');
     }
+
+    /** @return HasOne<WinnerPayoutReceipt, $this> */
+    public function receipt(): HasOne
+    {
+        return $this->hasOne(WinnerPayoutReceipt::class, 'winner_payout_id');
+    }
+
+    /** @return HasMany<WinnerPayoutDispute, $this> */
+    public function disputes(): HasMany
+    {
+        return $this->hasMany(WinnerPayoutDispute::class, 'winner_payout_id');
+    }
+
+    /** @return HasMany<WinnerPayoutReconciliation, $this> */
+    public function reconciliations(): HasMany
+    {
+        return $this->hasMany(WinnerPayoutReconciliation::class, 'winner_payout_id');
+    }
+
+    public function gameFinancialClosure(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(GameFinancialClosure::class, 'winner_payout_id');
+    }
 }

@@ -17,6 +17,7 @@ final class PlayerWinnerClaimResource extends JsonResource
         $claim = $this->resource;
         $winner = $claim->gameWinner;
         $game = $winner?->game;
+        $settlement = $claim->getAttribute('settlement') ?? [];
 
         return [
             'claim_reference' => $claim->claim_reference,
@@ -30,6 +31,15 @@ final class PlayerWinnerClaimResource extends JsonResource
             'identity_verified_at' => $claim->verified_at?->utc()->toIso8601String(),
             'public_prize_amount' => $game?->prize_cents,
             'currency' => $game?->currency,
+            'payout_status' => $settlement['payout_status'] ?? null,
+            'paid_at' => $settlement['paid_at']?->utc()->toIso8601String(),
+            'receipt_status' => $settlement['receipt_status'] ?? null,
+            'confirmation_expires_at' => $settlement['confirmation_expires_at']?->utc()->toIso8601String(),
+            'confirmed_at' => $settlement['confirmed_at']?->utc()->toIso8601String(),
+            'has_open_dispute' => $settlement['has_open_dispute'] ?? false,
+            'dispute_status' => $settlement['dispute_status'] ?? null,
+            'reconciliation_public_status' => $settlement['reconciliation_public_status'] ?? null,
+            'financially_closed' => $settlement['financially_closed'] ?? false,
         ];
     }
 }

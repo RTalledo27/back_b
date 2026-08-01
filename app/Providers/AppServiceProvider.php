@@ -16,6 +16,8 @@ use App\Modules\Commerce\Infrastructure\Gateway\FakePaymentGatewayWebhookVerifie
 use App\Modules\Commerce\Presentation\Http\Policies\OrderPolicy;
 use App\Modules\Commerce\Presentation\Http\Policies\PaymentPolicy;
 use App\Modules\Commerce\Presentation\Http\Policies\WinnerPayoutPolicy;
+use App\Modules\Commerce\Domain\Models\WinnerPayoutDispute;
+use App\Modules\Commerce\Presentation\Http\Policies\WinnerPayoutDisputePolicy;
 use App\Modules\RepeatNumberBingo\Application\Contracts\DrawNumberStrategy;
 use App\Modules\RepeatNumberBingo\Application\Contracts\GameStartReadinessChecker;
 use App\Modules\RepeatNumberBingo\Application\Contracts\PublicGameUpdatesPublisher;
@@ -78,6 +80,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Order::class, OrderPolicy::class);
         Gate::policy(Payment::class, PaymentPolicy::class);
         Gate::policy(WinnerPayout::class, WinnerPayoutPolicy::class);
+        Gate::policy(WinnerPayoutDispute::class, WinnerPayoutDisputePolicy::class);
 
         $this->configureAuthRateLimiters();
         $this->configurePasswordResetUrl();
@@ -211,6 +214,51 @@ class AppServiceProvider extends ServiceProvider
                 ->by('admin.winner-payout:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
                 ->response(fn (Request $request, array $headers) => response()->json([
                     'message' => 'Too many winner payout requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('winner-payout.receipt', function (Request $request): Limit {
+            return Limit::perMinute(5)
+                ->by('winner-payout.receipt:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many winner payout receipt requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('winner-payout.dispute', function (Request $request): Limit {
+            return Limit::perMinute(5)
+                ->by('winner-payout.dispute:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many winner payout dispute requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('admin.winner-payout-dispute', function (Request $request): Limit {
+            return Limit::perMinute(20)
+                ->by('admin.winner-payout-dispute:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many winner payout dispute review requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('admin.winner-payout-reconcile', function (Request $request): Limit {
+            return Limit::perMinute(20)
+                ->by('admin.winner-payout-reconcile:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many winner payout reconciliation requests.',
+                    'error' => 'too_many_requests',
+                ], 429, $headers));
+        });
+
+        RateLimiter::for('admin.financial-close', function (Request $request): Limit {
+            return Limit::perMinute(10)
+                ->by('admin.financial-close:'.($request->user()?->id ?? 'anonymous').':'.$request->ip())
+                ->response(fn (Request $request, array $headers) => response()->json([
+                    'message' => 'Too many financial closure requests.',
                     'error' => 'too_many_requests',
                 ], 429, $headers));
         });

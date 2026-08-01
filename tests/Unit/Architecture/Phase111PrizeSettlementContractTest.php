@@ -42,10 +42,8 @@ final class Phase111PrizeSettlementContractTest extends TestCase
     {
         $futureFragments = [
             '/audit',
-            '/confirm-receipt',
-            '/dispute',
-            '/reconcile',
-            '/resolve-dispute',
+            '/transparency',
+            '/commit-reveal',
         ];
 
         foreach (Route::getRoutes() as $route) {
@@ -58,15 +56,14 @@ final class Phase111PrizeSettlementContractTest extends TestCase
     }
 
     #[Test]
-    public function phase_eleven_does_not_add_persistence_or_migration_contracts(): void
+    public function phase_eleven_four_adds_only_the_approved_settlement_tables(): void
     {
-        $migrationSource = implode("\n", $this->phpFiles([base_path('database/migrations')]));
+        $migrationSource = file_get_contents(base_path('database/migrations/2026_08_01_100000_create_winner_payout_settlement_tables.php')) ?: '';
 
-        foreach ([
-            'payout_receipt',
-        ] as $forbiddenTerm) {
-            self::assertStringNotContainsString($forbiddenTerm, $migrationSource);
-        }
+        self::assertStringContainsString('winner_payout_receipts', $migrationSource);
+        self::assertStringContainsString('winner_payout_disputes', $migrationSource);
+        self::assertStringContainsString('winner_payout_reconciliations', $migrationSource);
+        self::assertStringContainsString('game_financial_closures', $migrationSource);
     }
 
     #[Test]
@@ -86,13 +83,7 @@ final class Phase111PrizeSettlementContractTest extends TestCase
             'game_winner_declared',
         ], $matches[1]);
 
-        foreach ([
-            'winner_claim_submitted',
-            'winner_payout_paid',
-            'game_financially_closed',
-        ] as $forbiddenEventType) {
-            self::assertStringNotContainsString($forbiddenEventType, $source);
-        }
+        self::assertStringContainsString('game_financially_closed', $source);
     }
 
     #[Test]

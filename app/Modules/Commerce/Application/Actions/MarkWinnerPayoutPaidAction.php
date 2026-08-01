@@ -9,10 +9,12 @@ use App\Modules\Commerce\Application\DTOs\WinnerPayoutCommandResult;
 use App\Modules\Commerce\Application\Support\WinnerPayoutWorkflow;
 use App\Modules\Commerce\Domain\Enums\WinnerPayoutEventType;
 use App\Modules\Commerce\Domain\Enums\WinnerPayoutExecutionAttemptStatus;
+use App\Modules\Commerce\Domain\Enums\WinnerPayoutReceiptStatus;
 use App\Modules\Commerce\Domain\Enums\WinnerPayoutStatus;
 use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutWorkflowException;
 use App\Modules\Commerce\Domain\Models\WinnerPayoutDocument;
 use App\Modules\Commerce\Domain\Models\WinnerPayoutExecutionAttempt;
+use App\Modules\Commerce\Domain\Models\WinnerPayoutReceipt;
 
 final class MarkWinnerPayoutPaidAction
 {
@@ -73,6 +75,18 @@ final class MarkWinnerPayoutPaidAction
         $payout->updated_at = $now;
         $payout->save();
         $this->workflow->recordEvent($payout, WinnerPayoutEventType::ExecutionRecorded, WinnerPayoutStatus::Processing->value, WinnerPayoutStatus::Paid->value, $data->actorUserId, 'admin', null, ['attempt_number' => $attempt->attempt_number]);
+
+        $receipt = WinnerPayoutReceipt::create([
+            'winner_payout_id' => $payout->id,
+            'winner_user_id' => $payout->user_id,
+            'status' => WinnerPayoutReceiptStatus::Pending,
+            'confirmation_window_started_at' => $now,
+            'confirmation_expires_at' => $now->copy()->addDays((int) config('commerce.winner_payout.confirmation_ttl_days', 7)),
+            'is_legacy' => false,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $this->workflow->recordEvent($payout, WinnerPayoutEventType::ReceiptCreated, null, WinnerPayoutReceiptStatus::Pending->value, $data->actorUserId, 'system', 'payout_paid', ['receipt_id' => (string) $receipt->id]);
 
         return $this->workflow->result($payout, true, (string) $attempt->id, (string) $document->id);
     }

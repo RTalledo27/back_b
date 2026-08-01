@@ -80,7 +80,7 @@ final class Phase112BWinnerClaimArchitectureTest extends TestCase
             ->filter(static fn ($route): bool => str_contains($route->uri(), 'winner-claims')
                 || str_contains($route->uri(), 'me/winnings'));
 
-        self::assertCount(8, $claimRoutes);
+        self::assertCount(10, $claimRoutes);
 
         foreach ($claimRoutes as $route) {
             self::assertTrue(

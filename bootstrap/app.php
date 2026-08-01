@@ -25,6 +25,7 @@ use App\Modules\Commerce\Domain\Exceptions\WinnerEntryNotRefundable;
 use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutNotFound;
 use App\Modules\Commerce\Domain\Exceptions\InvalidWinnerPayoutTransition;
 use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutWorkflowException;
+use App\Modules\Commerce\Domain\Exceptions\WinnerPayoutSettlementException;
 use App\Modules\Commerce\Presentation\Http\Exceptions\GatewayHttpException;
 use App\Modules\Commerce\Presentation\Http\Middleware\EnsurePaymentGatewayHttpEnabled;
 use App\Modules\RepeatNumberBingo\Domain\Exceptions\DrawnNumberOutOfRange;
@@ -453,6 +454,18 @@ return Application::configure(basePath: dirname(__DIR__))
                 return response()->json([
                     'message' => $e->getMessage(),
                     'error' => 'winner_payout_workflow_error',
+                    'reason' => $e->reason,
+                ], $status);
+            }
+        });
+
+        $exceptions->render(function (WinnerPayoutSettlementException $e, Request $request) {
+            if ($request->expectsJson() || $request->is('api/*')) {
+                $status = $e->reason === 'ownership' ? 403 : 409;
+
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'error' => 'winner_payout_settlement_error',
                     'reason' => $e->reason,
                 ], $status);
             }

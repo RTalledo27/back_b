@@ -28,4 +28,6 @@ final class WinnerPayoutPolicy
     public function cancel(User $user, WinnerPayout $payout): bool { return $user->isAdmin(); }
 
     public function viewDocument(User $user, WinnerPayout $payout): bool { return $user->isAdmin(); }
+
+    public function reconcile(User $user, WinnerPayout $payout): bool { return $user->isAdmin(); }
 }

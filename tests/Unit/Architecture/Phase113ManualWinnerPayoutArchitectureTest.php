@@ -20,7 +20,7 @@ final class Phase113ManualWinnerPayoutArchitectureTest extends TestCase
     {
         self::assertSame([
             'legacy_registered', 'draft', 'awaiting_approval', 'approved',
-            'processing', 'paid', 'failed', 'cancelled',
+            'processing', 'paid', 'disputed', 'failed', 'cancelled',
         ], array_map(static fn (WinnerPayoutStatus $status): string => $status->value, WinnerPayoutStatus::cases()));
     }
 

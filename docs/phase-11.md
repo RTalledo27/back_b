@@ -704,14 +704,11 @@ financiera del ganador.
 
 ### 11.4 — Winner confirmation, reconciliation y disputes
 
-- **Objetivo:** demostrar o disputar recepción y conciliar el premio.
-- **Alcance:** confirmación del ganador, discrepancias, resolución y
-  `financially_closed`.
-- **Endpoints probables:** confirm receipt, dispute y reconcile.
-- **Eventos:** confirmación, disputa, resolución y cierre financiero.
-- **Tests:** disputas, doble confirmación, vencimiento y compensaciones.
-- **Límites:** no modificar historial de draws ni ocultar eventos.
-- **Cierre:** cada juego cerrado tiene conciliación y estado verificable.
+La Fase 11.4 está implementada y su contrato completo se documenta en la
+sección **Fase 11.4 — Cierre del ciclo de recepción y conciliación**. Incluye
+recibo con ventana de confirmación, expiración programada, disputas,
+revisión administrativa, conciliación y `financially_closed`, sin modificar
+el historial de draws ni ocultar eventos.
 
 ### 11.5 — Public transparency manifest
 
@@ -866,3 +863,106 @@ El correo y Outbox existentes no se amplían con eventos nuevos. El estado
 `paid` demuestra que un administrador registró una ejecución con evidencia;
 no demuestra por sí solo que el ganador haya recibido el dinero. La
 confirmación, disputa y conciliación quedan para 11.4.
+
+## Fase 11.4 — Cierre del ciclo de recepción y conciliación
+
+La Fase 11.4 implementa el cierre operativo del pago manual sin convertirlo
+en un gateway ni afirmar que el sistema recibe dinero de una entidad
+financiera. El modelo distingue `paid` —ejecución administrativa registrada
+con evidencia— de la confirmación explícita del ganador, la conciliación y el
+cierre financiero.
+
+### Recibo y vencimiento
+
+Cada payout no histórico que alcanza `paid` crea un `WinnerPayoutReceipt` en
+estado `pending`. La ventana de confirmación se calcula con
+`WINNER_PAYOUT_CONFIRMATION_TTL_DAYS` y conserva `confirmation_expires_at`.
+El jugador puede confirmar una sola vez mediante:
+
+```text
+POST /api/v1/me/winnings/{winner}/confirm-receipt
+```
+
+La confirmación exige ownership, correo verificado, `Idempotency-Key` y una
+aceptación explícita. El Job `ExpireWinnerPayoutReceiptsJob`, programado cada
+minuto, cambia una ventana vencida a `window_expired`; no borra ni reescribe
+el payout. Los registros `legacy_registered` no generan un recibo nuevo ni
+pueden cerrar financieramente el juego.
+
+### Disputas y revisión
+
+El ganador puede abrir una disputa sobre un payout `paid` que aún no fue
+confirmado. La disputa guarda el motivo y la descripción cifrada, bloquea
+duplicados activos y mueve el payout a `disputed`. Un administrador puede
+iniciar la revisión y resolverla con una resolución permitida; una resolución
+correctiva puede devolver el payout a `failed` para que se registre un nuevo
+intento manual. La descripción rechaza credenciales, secretos y números de
+cuenta completos.
+
+```text
+POST /api/v1/me/winnings/{winner}/dispute
+GET  /api/v1/admin/winner-payout-disputes
+GET  /api/v1/admin/winner-payout-disputes/{dispute}
+POST /api/v1/admin/winner-payout-disputes/{dispute}/start-review
+POST /api/v1/admin/winner-payout-disputes/{dispute}/resolve
+```
+
+El bloqueo de concurrencia sigue el orden `WinnerPayout` y después el recurso
+de ciclo de vida correspondiente. Las acciones controlan sus propias
+transacciones; el endpoint solo coordina autorización, validación,
+idempotencia y Resource.
+
+### Conciliación y cierre financiero
+
+Un administrador registra una conciliación contra el intento `paid` actual:
+
+```text
+POST /api/v1/admin/winner-payouts/{payout}/reconcile
+POST /api/v1/admin/games/{game}/financial-close
+```
+
+La conciliación conserva solo un digest de referencia, notas cifradas y un
+resultado controlado. Un resultado distinto de `amount_and_reference_match`
+queda como `discrepancy`, abre una disputa administrativa y no permite el
+cierre. El cierre financiero exige juego `completed`, funding `reserved`,
+claim verificado no histórico, payout `paid`, intento `paid` con evidencia,
+recibo confirmado o vencido, conciliación `matched` y ninguna disputa activa.
+El cierre es inmutable y conserva un `safe_snapshot` sin PII ni referencias
+completas.
+
+### Auditoría y Outbox
+
+Los cambios de recibo, disputa, revisión, resolución, conciliación y cierre
+se registran en `winner_payout_events`. Solo cuatro transiciones públicas de
+este bloque crean eventos Outbox durables: confirmación del recibo, apertura
+de disputa, resolución de disputa y cierre financiero. El dispatcher los
+procesa de forma segura sin enviar correo, SMS ni mensajes a un gateway.
+La entrega conserva semántica at-least-once y deduplicación best-effort; no se
+afirma exactly-once.
+
+Los payloads Outbox solo contienen identificadores técnicos necesarios,
+estado seguro, código de motivo y fecha UTC. No incluyen descripción cifrada,
+notas, cuentas, referencias completas, documentos, tokens, credenciales ni
+actores privados. La consulta del jugador agrega únicamente estados públicos
+del recibo, disputa, conciliación y cierre a sus claims; los recursos
+administrativos separan el detalle sensible y nunca serializan modelos
+Eloquent directamente como contrato público.
+
+### Operación, compatibilidad y límites
+
+El flujo operativo es: claim verificado, funding reservado, payout creado con
+dual control, ejecución manual documentada, payout `paid`, confirmación o
+vencimiento, conciliación y cierre. El worker y el scheduler existentes deben
+seguir activos; el Job de expiración puede ejecutarse de forma repetible y
+segura. Las respuestas de error son semánticas y estables; los comandos se
+protegen con `auth:sanctum`, políticas, `Idempotency-Key`, PostgreSQL
+`lockForUpdate` y límites dedicados.
+
+Esta fase no implementa confirmación bancaria, payout automático, gateway,
+WhatsApp, SMS, endpoints públicos de transparencia, frontend ni Fase 11.5.
+`legacy_registered` sigue siendo solo un registro histórico. `paid`,
+`confirmed`, `matched` y `financially_closed` son estados distintos y no
+demuestran por sí solos recepción bancaria. El sistema garantiza trazabilidad
+administrativa, idempotencia best-effort y consistencia transaccional dentro
+de sus límites; no garantiza entrega exactly-once, pago automático ni
+recepción financiera externa.

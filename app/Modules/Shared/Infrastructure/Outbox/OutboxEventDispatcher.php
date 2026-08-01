@@ -10,6 +10,7 @@ use App\Modules\Shared\Infrastructure\Outbox\Handlers\OrderRefundedNotificationH
 use App\Modules\Shared\Infrastructure\Outbox\Handlers\PaymentApprovedNotificationHandler;
 use App\Modules\Shared\Infrastructure\Outbox\Handlers\PaymentRejectedNotificationHandler;
 use App\Modules\Shared\Infrastructure\Outbox\Handlers\WinnerPayoutRegisteredNotificationHandler;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -38,6 +39,17 @@ class OutboxEventDispatcher
      */
     public function dispatch(OutboxEvent $event): void
     {
+        if (in_array($event->event_type, [
+            'winner_payout_receipt_confirmed',
+            'winner_payout_disputed',
+            'winner_payout_dispute_resolved',
+            'game_financially_closed',
+        ], true)) {
+            $this->handleSettlementEvent($event);
+
+            return;
+        }
+
         match ($event->event_type) {
             'payment_approved' => $this->paymentApprovedHandler->handle($event->id, $event->payload),
             'payment_rejected' => $this->paymentRejectedHandler->handle($event->id, $event->payload),
@@ -48,5 +60,16 @@ class OutboxEventDispatcher
                 "OutboxEventDispatcher: unknown event_type '{$event->event_type}'."
             ),
         };
+    }
+
+    /** @param array<string, mixed> $payload */
+    private function handleSettlementEvent(OutboxEvent $event): void
+    {
+        Log::info('outbox.settlement_event.processed', [
+            ...array_combine(
+                ['outbox_event_id', 'event_type', 'aggregate_type', 'aggregate_id', 'schema_version'],
+                [$event->id, $event->event_type, $event->aggregate_type, $event->aggregate_id, $event->payload['schema_version'] ?? null],
+            ),
+        ]);
     }
 }

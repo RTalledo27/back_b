@@ -112,4 +112,9 @@ final class GamePolicy
     {
         return $user->isAdmin();
     }
+
+    public function financialClose(User $user, Game $game): bool
+    {
+        return $user->isAdmin();
+    }
 }
